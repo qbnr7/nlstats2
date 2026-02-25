@@ -92,11 +92,21 @@ The script `02_build_flat_file.py` reads all game Excel files and the schedule f
 For each game file the script:
 1. Matches the filename to a Game ID in the schedule to get teams, date and officials
 2. Reads every play and finds rows with penalties
-3. Parses the GRADE OFFICIAL code to extract individual position and grade pairs
-4. Looks up the official's initials and full name from the officials database
-5. Writes one row per graded official call to the output CSV
+3. Reads the FLAG column which holds the overall crew grade for the penalty
+4. Parses the GRADE OFFICIAL code to extract individual position and grade pairs
+5. Looks up the official's initials and full name from the officials database
+6. Writes one row per graded official call to the output CSV
 
-A penalty involving multiple officials (e.g. `LCHC`) is split into separate rows — one for the Line Judge and one for the Head Linesman. Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both processed.
+A penalty involving multiple officials (e.g. `LCHC`) is split into separate rows — one for the Line Judge and one for the Head Linesman. The crew flag (e.g. `CC`) is repeated on both rows so it is always available regardless of how the data is grouped. Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both processed.
+
+### The Difference Between FLAG and GRADE OFFICIAL
+
+These two columns serve different purposes:
+
+- **FLAG** is the overall crew grade — did the officiating crew collectively handle this penalty correctly? This is used for crew-level and penalty-level analysis.
+- **GRADE OFFICIAL** is the individual breakdown — which specific officials were involved and how did each of them perform? This is used for individual performance analysis.
+
+A common case is where a flag is graded `CC` (crew correct) but one official within the crew received an `N` (no call) grade because they should have been involved but were not.
 
 ### Folder Structure
 ```
@@ -127,10 +137,11 @@ One row per graded official call with the following columns:
 | play_number | Play number within the game |
 | qtr | Quarter |
 | foul_code | Penalty code (e.g. DOF, FST) |
+| flag | Overall crew grade for this penalty (e.g. CC, MC, IC) |
 | position | Single letter position code (R, U, H, L, B, F, S, C) |
 | official_initials | Initials of the official in that position |
 | official_name | Full name of the official |
-| grade_code | Single letter grade (C, M, I, N, G, W) |
+| grade_code | Single letter individual grade (C, M, I, N, G, W) |
 
 ### Game File Naming
 
