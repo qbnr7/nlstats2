@@ -4,7 +4,7 @@ This project collects and analyses officiating grades from American football gam
 
 ## How It Works
 
-Each game is recorded in an Excel file with one row per play. When a penalty occurs, the row includes a foul code, a grade for the call, and a code that links the grade to the specific official(s) involved. A separate schedule file tracks which officials worked each game and in what positions.
+Each game is recorded in an Excel file with one row per play. When a penalty occurs, the row includes a foul code, an overall crew grade (FLAG), and a code that links individual grades to the specific official(s) involved. A separate schedule file tracks which officials worked each game and in what positions.
 
 ### Grading System
 
@@ -18,6 +18,8 @@ Each penalty call is graded on the following scale:
 | IC / I | Incorrect Call | 0 |
 | NG / G | Non-gradeable | Excluded |
 | W | Waived | Excluded |
+
+The FLAG column holds the overall crew grade — did the crew collectively handle the penalty correctly? The GRADE OFFICIAL column holds the individual breakdown — which officials were involved and how did each perform? These two are kept separate in the data so both crew-level and individual analysis is possible.
 
 ### Official Position Codes
 
@@ -34,36 +36,48 @@ Grades are linked to officials using single-letter position codes — for exampl
 | S | Side Judge |
 | C | Center Judge |
 
-## Scripts
+## Pipeline
 
-The analysis is built as a series of single-purpose scripts that can be run individually or in sequence. Each script is described in its own section below.
+The analysis is built as a series of single-purpose scripts that are run in order:
+```
+01_check_files.py       ← check game files match schedule
+02_convert_to_csv.py    ← convert game Excel files to CSV
+03_build_flat_file.py   ← build flat_calls.csv from CSVs and schedule
+04_generate_report.py   ← generate reports from flat_calls.csv
+```
+
+Run them with:
+```bash
+python3 -W ignore 01_check_files.py
+python3 -W ignore 02_convert_to_csv.py
+python3 -W ignore 03_build_flat_file.py
+python3 -W ignore 04_generate_report.py
+```
+
+The `-W ignore` flag suppresses NumPy version warnings that appear on some systems. The scripts run correctly regardless.
 
 ---
 
-## Troubleshooting Script
+## Script 01 - Check Files
 
-The troubleshooting script (`troubleshooting_script.py`) checks that your game Excel files match the games listed in the schedule. It generates an HTML report showing which games have files and which are missing.
+The script `01_check_files.py` checks that your game Excel files match the games listed in the schedule. It generates an HTML report showing which games have files and which are missing.
 
 ### Folder Structure
-
-The script expects the following folder structure:
 ```
 nlstats2/
 ├── data/          ← game Excel files (one per game)
 ├── nlplan/        ← schedule Excel file with officials assignments
 ├── reports/       ← generated reports are saved here (auto-created)
-└── troubleshooting_script.py
+└── 01_check_files.py
 ```
 
 ### Usage
-
-Run the script from the terminal in the repo folder:
 ```bash
 # Generate troubleshooting report only
-python troubleshooting_script.py --troubleshooting-only
+python3 01_check_files.py --troubleshooting-only
 
 # Generate troubleshooting report alongside full analysis
-python troubleshooting_script.py --troubleshooting
+python3 01_check_files.py --troubleshooting
 ```
 
 Open `reports/troubleshooting_report.html` in your browser to see the results.
@@ -82,14 +96,37 @@ Game files must match the Game ID in the schedule. For example:
 12April-Tigers-v-89ers.xlsx
 ```
 
+---
 
-## Script 02 - Build Flat File
+## Script 02 - Convert to CSV
 
-The script `02_build_flat_file.py` reads all game Excel files and the schedule file, then produces a single flat CSV file with one row per graded official call. This CSV is the input for all subsequent reporting scripts.
+The script `02_convert_to_csv.py` converts game Excel files to CSV format. This is a one-time conversion step needed because the game Excel files have a formatting issue that prevents standard Excel readers from opening them. Converting to CSV removes all formatting and produces clean data files that work reliably on any system.
+
+The schedule file in `nlplan/` does not need converting as it reads fine.
+
+### Folder Structure
+```
+nlstats2/
+├── data/          ← game Excel files go in, CSV files come out
+└── 02_convert_to_csv.py
+```
+
+### Usage
+```bash
+python3 02_convert_to_csv.py
+```
+
+Each `.xlsx` file in `data/` will produce a matching `.csv` file in the same folder. The original Excel files are not modified or deleted.
+
+---
+
+## Script 03 - Build Flat File
+
+The script `03_build_flat_file.py` reads all game CSV files and the schedule file, then produces a single flat CSV file with one row per graded official call. This CSV is the input for all subsequent reporting scripts.
 
 ### How It Works
 
-For each game file the script:
+For each game CSV file the script:
 1. Matches the filename to a Game ID in the schedule to get teams, date and officials
 2. Reads every play and finds rows with penalties
 3. Reads the FLAG column which holds the overall crew grade for the penalty
@@ -97,29 +134,20 @@ For each game file the script:
 5. Looks up the official's initials and full name from the officials database
 6. Writes one row per graded official call to the output CSV
 
-A penalty involving multiple officials (e.g. `LCHC`) is split into separate rows — one for the Line Judge and one for the Head Linesman. The crew flag (e.g. `CC`) is repeated on both rows so it is always available regardless of how the data is grouped. Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both processed.
-
-### The Difference Between FLAG and GRADE OFFICIAL
-
-These two columns serve different purposes:
-
-- **FLAG** is the overall crew grade — did the officiating crew collectively handle this penalty correctly? This is used for crew-level and penalty-level analysis.
-- **GRADE OFFICIAL** is the individual breakdown — which specific officials were involved and how did each of them perform? This is used for individual performance analysis.
-
-A common case is where a flag is graded `CC` (crew correct) but one official within the crew received an `N` (no call) grade because they should have been involved but were not.
+A penalty involving multiple officials (e.g. `LCHC`) is split into separate rows — one for the Line Judge and one for the Head Linesman. The crew flag is repeated on both rows. Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both processed.
 
 ### Folder Structure
 ```
 nlstats2/
-├── data/          ← one Excel file per game, filename must match GameID in schedule
+├── data/          ← game CSV files (from 02_convert_to_csv.py)
 ├── nlplan/        ← schedule Excel file
 ├── output/        ← flat_calls.csv is written here (auto-created)
-└── 02_build_flat_file.py
+└── 03_build_flat_file.py
 ```
 
 ### Usage
 ```bash
-python 02_build_flat_file.py
+python3 -W ignore 03_build_flat_file.py
 ```
 
 Output is written to `output/flat_calls.csv`.
@@ -142,15 +170,6 @@ One row per graded official call with the following columns:
 | official_initials | Initials of the official in that position |
 | official_name | Full name of the official |
 | grade_code | Single letter individual grade (C, M, I, N, G, W) |
-
-### Game File Naming
-
-Game files must be named exactly after the GameID in the schedule. For example if the schedule has GameID `31August-Towers-v-Razorbacks` the file must be named:
-```
-31August-Towers-v-Razorbacks.xlsx
-```
-
-If a file does not match any GameID in the schedule the script will still process it but date, teams and official names will be blank. A warning is printed to the terminal.
 
 ### Notes
 
