@@ -16,6 +16,32 @@ import csv
 from pathlib import Path
 from collections import defaultdict
 
+import re as _re
+
+def format_game(game_id):
+    """10Maj-89ers-v-Oaks  →  10 Maj -- 89ers vs Oaks"""
+    m = _re.match(r'^(\d+)([A-Za-z]+)-(.+)-v-(.+)$', game_id)
+    if not m:
+        return game_id
+    day, month, home, away = m.groups()
+    return f"{day} {month} -- {home.replace('_', ' ')} vs {away.replace('_', ' ')}"
+
+MONTH_ORDER = {
+    'Januar': 1, 'February': 2, 'Marts': 3, 'April': 4,
+    'Maj': 5, 'Juni': 6, 'Juli': 7, 'August': 8,
+    'September': 9, 'Oktober': 10, 'November': 11, 'December': 12,
+}
+
+def game_sort_key(game_id):
+    """Sort key for game IDs -- by month then day number."""
+    m = _re.match(r'^(\d+)([A-Za-z]+)-', game_id)
+    if not m:
+        return (99, 99, game_id)
+    day, month = m.groups()
+    return (MONTH_ORDER.get(month, 50), int(day), game_id)
+
+
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 INPUT_FILE    = Path("output/flat_calls.csv")
@@ -155,24 +181,24 @@ FOUL_GROUPS = {
 
 def foul_display(code):
     if not code:
-        return '—'
+        return '--'
     if code in FOUL_NAMES:
-        return f"{code} — {FOUL_NAMES[code]}"
+        return f"{code} -- {FOUL_NAMES[code]}"
     for prefix, parent_name in FOUL_GROUPS.items():
         if code.startswith(prefix):
             sub = code[len(prefix):]
-            return f"{code} — {parent_name} ({sub})"
+            return f"{code} -- {parent_name} ({sub})"
     return code
 
 
 def foul_group(code):
     if not code:
-        return '—'
+        return '--'
     for prefix, parent_name in FOUL_GROUPS.items():
         if code.startswith(prefix):
             return parent_name
     if code in FOUL_NAMES:
-        return f"{code} — {FOUL_NAMES[code]}"
+        return f"{code} -- {FOUL_NAMES[code]}"
     return code
 
 
@@ -293,10 +319,66 @@ a { color: #3498db; }
              vertical-align: middle; }
 .toc { background: #f0f4f8; border-radius: 6px; padding: 16px; margin: 20px 0; }
 .toc a { display: block; margin: 4px 0; }
+.explainer { background: #eaf3fb; border-left: 4px solid #3498db; border-radius: 6px;
+             padding: 18px 22px; margin: 20px 0; font-size: 0.95em; line-height: 1.7; }
+.explainer h3 { color: #2c6e9e; margin: 0 0 10px 0; font-size: 1.05em; }
+.explainer p  { margin: 6px 0; }
+.explainer table { border-collapse: collapse; margin: 10px 0; font-size: 0.92em; }
+.explainer table td, .explainer table th { padding: 4px 14px; border: 1px solid #c3daf0; }
+.explainer table th { background: #c3daf0; font-weight: bold; }
+.explainer .flag-row  { background: #fef9e7; }
+.explainer .grade-row { background: #eafaf1; }
+.summary-card .sublabel { color: #888; font-size: 0.8em; margin-top: 2px; }
+/* Sticky side nav */
+.sidenav { position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+           background: #2c3e50; border-radius: 8px 0 0 8px; padding: 10px 0;
+           z-index: 1000; min-width: 44px; box-shadow: -2px 0 10px rgba(0,0,0,.2); }
+.sidenav a { display: flex; align-items: center; padding: 8px 14px 8px 12px;
+             color: #ccc; text-decoration: none; font-size: 0.78em;
+             white-space: nowrap; overflow: hidden; transition: all .2s; }
+.sidenav a .nav-icon { font-size: 1.1em; min-width: 20px; }
+.sidenav a .nav-label { max-width: 0; overflow: hidden; transition: max-width .25s ease;
+                         padding-left: 0; }
+.sidenav:hover a .nav-label { max-width: 200px; padding-left: 8px; }
+.sidenav a:hover { background: #3498db; color: white; }
+.sidenav a.active { background: #3498db; color: white; }
+.sidenav .nav-divider { height: 1px; background: #455; margin: 4px 10px; }
+/* Foul breakdown table */
+.pct-bar-cell { white-space: nowrap; }
+.pct-bar-cell .mini-bar { display:inline-block; height:10px; border-radius:3px;
+                           vertical-align:middle; margin-right:4px; }
+.cell-cc  { background: #d4edda; }
+.cell-ic  { background: #f8d7da; }
+.cell-mc  { background: #fff3cd; }
+.cell-nc  { background: #fde8d3; }
+.cell-ng  { background: #e9ecef; }
+.cell-w   { background: #e9ecef; }
+.foul-filter-bar { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 4px 0;
+                   align-items:center; font-size:0.9em; }
+.foul-filter-bar select, .foul-filter-bar input
+  { padding:5px 8px; border:1px solid #ccc; border-radius:4px; font-size:0.9em; }
 """
 
 JS = """
 <script>
+// ── Sticky nav scroll spy ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  var navLinks = document.querySelectorAll('.sidenav a[href^="#"]');
+  if (!navLinks.length) return;
+  var sections = Array.from(navLinks).map(function(a) {
+    return document.querySelector(a.getAttribute('href'));
+  }).filter(Boolean);
+  function onScroll() {
+    var scrollY = window.scrollY + 120;
+    var current = sections[0];
+    sections.forEach(function(s) { if (s.offsetTop <= scrollY) current = s; });
+    navLinks.forEach(function(a) {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current.id);
+    });
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+});
 // ── Sortable tables ────────────────────────────────────────────────────────
 function getCellValue(row, colIndex) {
   return row.cells[colIndex] ? row.cells[colIndex].innerText.trim() : '';
@@ -406,15 +488,51 @@ def grade_breakdown_cells(grades):
 
 # ── Individual official report ─────────────────────────────────────────────────
 
+
+def explainer_box():
+    return """
+<div class="explainer">
+  <h3>&#x1F4CB; Understanding Flags and Grades</h3>
+  <p>Each penalty call produces two separate pieces of information tracked independently:</p>
+  <table>
+    <tr><th>Concept</th><th>What it measures</th><th>Who it applies to</th><th>Codes used</th></tr>
+    <tr class="flag-row">
+      <td><strong>Flag</strong>&nbsp;(crew grade)</td>
+      <td>Did the crew as a whole handle the situation correctly?</td>
+      <td>The entire officiating crew on the play</td>
+      <td>CC &nbsp;MC &nbsp;IC &nbsp;NC &nbsp;NG &nbsp;W</td>
+    </tr>
+    <tr class="grade-row">
+      <td><strong>Grade</strong>&nbsp;(individual)</td>
+      <td>Did this specific official perform correctly -- positioning, mechanics, judgement?</td>
+      <td>Each individual official involved in the call</td>
+      <td>C &nbsp;M &nbsp;N &nbsp;I &nbsp;G &nbsp;W</td>
+    </tr>
+  </table>
+  <p><strong>Accuracy percentages are based on individual grades only.</strong>
+     G (non-gradeable) and W (waived) are excluded from the calculation.</p>
+  <table>
+    <tr><th>Grade</th><th>Meaning</th><th>Score</th></tr>
+    <tr><td><span class="badge tag-C">C</span></td><td>Correct</td><td>100</td></tr>
+    <tr><td><span class="badge tag-M">M</span></td><td>Marginal</td><td>75</td></tr>
+    <tr><td><span class="badge tag-N">N</span></td><td>No-call (should have been flagged)</td><td>50</td></tr>
+    <tr><td><span class="badge tag-I">I</span></td><td>Incorrect</td><td>0</td></tr>
+    <tr><td><span class="badge tag-G">G</span></td><td>Non-gradeable -- excluded</td><td>--</td></tr>
+    <tr><td><span class="badge tag-W">W</span></td><td>Waived (flag picked up) -- excluded</td><td>--</td></tr>
+  </table>
+</div>
+"""
+
 def build_official_report(initials, data, games):
     name          = data['name']
-    games_worked  = sorted(data['games'])
+    games_worked  = sorted(data['games'], key=game_sort_key)
     calls_by_game = data['calls_by_game']
 
     all_grades        = []
     per_game_accuracy = {}
     positions_worked  = defaultdict(int)
 
+    pos_games = defaultdict(set)   # position -> set of game_ids
     for game_id in games_worked:
         calls       = calls_by_game[game_id]
         game_grades = [c['grade'] for c in calls if c['grade']]
@@ -423,6 +541,7 @@ def build_official_report(initials, data, games):
         for c in calls:
             if c['position']:
                 positions_worked[c['position']] += 1
+                pos_games[c['position']].add(game_id)
 
     overall_accuracy = calc_accuracy(all_grades)
     grade_counts     = defaultdict(int)
@@ -435,24 +554,48 @@ def build_official_report(initials, data, games):
     html = html_header(f"Official Report: {name}",
                        back_link="../combined_report.html")
 
+    html += sidenav_html([
+        ('summary',       '📊', 'Summary'),
+        ('grade-breakdown','🎯', 'Grade Breakdown'),
+        ('perf-by-game',  '📅', 'By Game'),
+        ('game-breakdown','🔍', 'Game Detail'),
+    ])
+
+    html += explainer_box()
+
     # Summary cards
+    html += '<div id="summary">'
+    n_flags_total = len(all_grades)
+    n_graded      = sum(1 for g in all_grades if g in GRADE_SCORES)
+    # Build positions card: one line per position -- name, games, flags
+    pos_lines = ''.join(
+        f'<div style="margin:3px 0">'
+        f'<strong>{POSITION_NAMES.get(p, p)}</strong>'
+        f', Games {len(pos_games[p])}'
+        f', Flags {n}</div>'
+        for p, n in sorted(positions_worked.items(), key=lambda x: pos_sort_key(x[0]))
+    ) or '<div>N/A</div>'
     html += '<div class="summary-grid">'
     html += (f'<div class="summary-card"><div class="value" style="color:{colour}">'
-             f'{acc_display}</div><div class="label">Overall Accuracy</div></div>')
+             f'{acc_display}</div>'
+             f'<div class="label">Overall Accuracy</div>'
+             f'<div class="sublabel">Based on {n_graded} graded calls (C / M / N / I)</div></div>')
     html += (f'<div class="summary-card"><div class="value">{len(games_worked)}</div>'
              f'<div class="label">Games Officiated</div></div>')
-    html += (f'<div class="summary-card"><div class="value">{len(all_grades)}</div>'
-             f'<div class="label">Graded Calls</div></div>')
-    pos_str = ', '.join(
-        f"{POSITION_NAMES.get(p, p)} ({n})"
-        for p, n in sorted(positions_worked.items(), key=lambda x: pos_sort_key(x[0]))
-    )
-    html += (f'<div class="summary-card"><div class="value" style="font-size:1em">'
-             f'{pos_str or "N/A"}</div><div class="label">Positions Worked</div></div>')
+    html += (f'<div class="summary-card"><div class="value">{n_flags_total}</div>'
+             f'<div class="label">Flags Thrown</div>'
+             f'<div class="sublabel">All calls including non-gradeable (G) and waived (W)</div></div>')
+    html += (f'<div class="summary-card"><div class="value">{n_graded}</div>'
+             f'<div class="label">Graded Calls</div>'
+             f'<div class="sublabel">C / M / N / I only -- used for accuracy</div></div>')
+    html += (f'<div class="summary-card" style="min-width:220px">'
+             f'<div class="label" style="margin-bottom:6px;font-weight:bold">Positions Worked</div>'
+             f'<div style="font-size:0.93em">{pos_lines}</div></div>')
     html += '</div>'
 
+    html += '</div>'
     # Grade breakdown
-    html += '<h2>Grade Breakdown</h2>'
+    html += '<h2 id="grade-breakdown">Grade Breakdown</h2>'
     html += table_start(['Grade', 'Count', '% of graded calls'])
     total_scorable = sum(1 for g in all_grades if g in GRADE_SCORES)
     for g in ['C', 'M', 'N', 'I', 'G', 'W']:
@@ -463,8 +606,8 @@ def build_official_report(initials, data, games):
     html += table_end()
 
     # Performance by game
-    html += '<h2>Performance by Game</h2>'
-    html += table_start(['Game', 'Date', 'Position', 'Calls', 'Accuracy', 'Bar'])
+    html += '<h2 id="perf-by-game">Performance by Game</h2>'
+    html += table_start(['Game', 'Position', 'Calls', 'Accuracy', 'Bar'])
     for game_id in games_worked:
         calls     = calls_by_game[game_id]
         info      = games.get(game_id, {})
@@ -482,14 +625,14 @@ def build_official_report(initials, data, games):
         bar_width = int(acc) if acc is not None else 0
         bar       = (f'<div class="trend-bar" style="width:{bar_width}px;'
                      f'background:{col}"></div>')
-        html += (f'<tr><td>{home} v {away}</td><td>{date}</td>'
+        html += (f'<tr><td>{format_game(game_id)}</td>'
                  f'<td>{pos_list}</td><td>{n_calls}</td>'
                  f'<td style="color:{col};font-weight:bold">{acc_str}</td>'
                  f'<td>{bar}</td></tr>')
     html += table_end()
 
     # Game by game breakdown
-    html += '<h2>Game by Game Breakdown</h2>'
+    html += '<h2 id="game-breakdown">Game by Game Breakdown</h2>'
     for game_id in games_worked:
         calls   = calls_by_game[game_id]
         info    = games.get(game_id, {})
@@ -501,7 +644,7 @@ def build_official_report(initials, data, games):
         acc_str = f"{acc}%" if acc is not None else "N/A"
 
         html += '<div class="game-section">'
-        html += (f'<h3>{home} v {away} — {date} '
+        html += (f'<h3>{format_game(game_id)} '
                  f'<span style="color:{col}">({acc_str})</span></h3>')
         html += table_start(['Qtr', 'Play', 'Position', 'Foul', 'Flag', 'Grade'])
         # Sort calls by position order, then play number
@@ -512,7 +655,7 @@ def build_official_report(initials, data, games):
         )
         for c in sorted_calls:
             pos_name   = POSITION_NAMES.get(c['position'], c['position'])
-            grade_cell = grade_badge(c['grade']) if c['grade'] else '—'
+            grade_cell = grade_badge(c['grade']) if c['grade'] else '--'
             html += (f"<tr><td>{c['qtr']}</td><td>{c['play']}</td>"
                      f"<td>{pos_name}</td><td>{foul_display(c['foul'])}</td>"
                      f"<td>{c['flag']}</td><td>{grade_cell}</td></tr>")
@@ -525,28 +668,196 @@ def build_official_report(initials, data, games):
 
 # ── Combined overview report ───────────────────────────────────────────────────
 
+
+def sidenav_html(sections):
+    """sections = list of (anchor, icon, label)"""
+    html  = '<nav class="sidenav">'
+    for i, (anchor, icon, label) in enumerate(sections):
+        if i and i % 4 == 0:
+            html += '<div class="nav-divider"></div>'
+        html += (f'<a href="#{anchor}">'
+                 f'<span class="nav-icon">{icon}</span>'
+                 f'<span class="nav-label">{label}</span>'
+                 f'</a>')
+    html += '</nav>'
+    return html
+
+
+
+
+
+def build_foul_table(games):
+    """One row per foul type with crew flag % columns and individual accuracy."""
+    from collections import defaultdict
+
+    GRADE_SCORES_LOCAL = {'C': 100, 'M': 75, 'N': 50, 'I': 0}
+    FLAG_COLS = ['CC', 'MC', 'IC', 'NC', 'NG', 'W']
+
+    foul_flags  = defaultdict(lambda: defaultdict(int))
+    foul_grades = defaultdict(lambda: defaultdict(int))
+
+    seen_plays = set()
+    for info in games.values():
+        for r in info['rows']:
+            foul  = r['foul_code'].strip()
+            flag  = r['flag'].strip().upper()
+            grade = r['grade_code'].strip().upper()
+            if not foul:
+                continue
+            play_key = (r['game_id'], r['play_number'], foul)
+            if play_key not in seen_plays:
+                seen_plays.add(play_key)
+                if flag:
+                    foul_flags[foul][flag] += 1
+            if grade:
+                foul_grades[foul][grade] += 1
+
+    def ind_acc(foul):
+        denom  = sum(foul_grades[foul][g] for g in GRADE_SCORES_LOCAL)
+        if not denom:
+            return None
+        total_score = sum(GRADE_SCORES_LOCAL[g] * foul_grades[foul][g]
+                          for g in GRADE_SCORES_LOCAL)
+        return round(total_score / denom, 1)
+
+    def flag_pct(foul, flag):
+        total = sum(foul_flags[foul].values())
+        return round(foul_flags[foul][flag] / total * 100, 1) if total else 0.0
+
+    def pct_bar(value):
+        w = round(value * 0.55)
+        bar = '<span style="display:inline-block;height:10px;border-radius:3px;'
+        bar += 'background:#aaa;vertical-align:middle;margin-right:5px;'
+        bar += 'width:' + str(w) + 'px"></span>'
+        return bar + str(value) + '%'
+
+    def acc_bar(value):
+        if value is None:
+            return '<span style="color:#aaa">N/A</span>'
+        col = score_colour(value)
+        w   = round(value * 0.55)
+        bar = '<span style="display:inline-block;height:12px;border-radius:3px;'
+        bar += 'background:' + col + ';vertical-align:middle;margin-right:6px;'
+        bar += 'width:' + str(w) + 'px"></span>'
+        return bar + '<strong style="color:' + col + '">' + str(value) + '%</strong>'
+
+    fouls = sorted(foul_flags.keys(), key=lambda f: -sum(foul_flags[f].values()))
+    cats  = sorted(set(foul_group(f) for f in fouls))
+
+    # Colour backgrounds per column
+    col_bg = {
+        'CC': '#d4edda', 'MC': '#fff3cd', 'IC': '#f8d7da',
+        'NC': '#fde8d3', 'NG': '#e9ecef', 'W':  '#e9ecef',
+    }
+
+    lines = []
+    lines.append('<h2 id="foul-table">Foul Breakdown by Call Type</h2>')
+    lines.append('<p>One row per foul type. '
+                 '<strong>Crew flag %</strong> columns show how often the crew\'s collective '
+                 'call received each grade. '
+                 '<strong>Ind. Accuracy</strong> is the weighted average of individual '
+                 'official grades (C=100, M=75, N=50, I=0) -- G and W excluded. '
+                 'Click any column header to sort. Use the filters below to narrow the list.</p>')
+
+    # Filter bar
+    lines.append('<div class="foul-filter-bar">')
+    lines.append('<label>Category: <select id="foulCatFilter" onchange="filterFoulTable()">'
+                 '<option value="">All</option>')
+    for cat in cats:
+        lines.append('<option value="' + cat + '">' + cat + '</option>')
+    lines.append('</select></label>')
+    lines.append('<label>Search foul: <input type="text" id="foulSearch" '
+                 'placeholder="e.g. OFH, PF..." oninput="filterFoulTable()" '
+                 'style="width:160px"></label>')
+    lines.append('<label>Min flags: <input type="number" id="foulMinFlags" value="1" min="1" '
+                 'oninput="filterFoulTable()" style="width:60px"></label>')
+    lines.append('</div>')
+
+    # Table header
+    lines.append('<table class="sortable-table" id="foulBreakdownTable">')
+    lines.append('<thead><tr>')
+    lines.append('<th>Foul</th>')
+    lines.append('<th>Category</th>')
+    lines.append('<th>Flags</th>')
+    for flag in FLAG_COLS:
+        title_map = {
+            'CC': 'Crew: Correct Call', 'MC': 'Crew: Marginal Call',
+            'IC': 'Crew: Incorrect Call', 'NC': 'Crew: No-Call',
+            'NG': 'Crew: Non-gradeable', 'W': 'Crew: Waived',
+        }
+        lines.append('<th title="' + title_map[flag] + '">' + flag + ' %</th>')
+    lines.append('<th title="Individual official accuracy (C/M/N/I grades)">Ind. Accuracy</th>')
+    lines.append('</tr></thead>')
+    lines.append('<tbody>')
+
+    for foul in fouls:
+        total = sum(foul_flags[foul].values())
+        cat   = foul_group(foul)
+        acc   = ind_acc(foul)
+        lines.append('<tr data-cat="' + cat + '" data-flags="' + str(total) + '">')
+        lines.append('<td><strong>' + foul_display(foul) + '</strong></td>')
+        lines.append('<td>' + cat + '</td>')
+        lines.append('<td>' + str(total) + '</td>')
+        for flag in FLAG_COLS:
+            p = flag_pct(foul, flag)
+            bg = col_bg.get(flag, '#fff')
+            cell = '<td style="background:' + bg + '">' + pct_bar(p) + '</td>'
+            lines.append(cell)
+        lines.append('<td>' + acc_bar(acc) + '</td>')
+        lines.append('</tr>')
+
+    lines.append('</tbody></table>')
+
+    # Filter JS
+    lines.append('<script>')
+    lines.append('function filterFoulTable() {')
+    lines.append('  var cat      = document.getElementById("foulCatFilter").value.toLowerCase();')
+    lines.append('  var search   = document.getElementById("foulSearch").value.toLowerCase();')
+    lines.append('  var minFlags = parseInt(document.getElementById("foulMinFlags").value) || 1;')
+    lines.append('  var rows     = document.querySelectorAll("#foulBreakdownTable tbody tr");')
+    lines.append('  rows.forEach(function(row) {')
+    lines.append('    var rowCat   = (row.dataset.cat   || "").toLowerCase();')
+    lines.append('    var rowFlags = parseInt(row.dataset.flags) || 0;')
+    lines.append('    var rowText  = row.textContent.toLowerCase();')
+    lines.append('    var show = (!cat    || rowCat.indexOf(cat)    >= 0)')
+    lines.append('            && (!search || rowText.indexOf(search) >= 0)')
+    lines.append('            && rowFlags >= minFlags;')
+    lines.append('    row.style.display = show ? "" : "none";')
+    lines.append('  });')
+    lines.append('}')
+    lines.append('</script>')
+
+    return '\n'.join(lines) + '\n'
+
+
+
 def build_combined_report(games, officials):
-    html = html_header("NL Officiating — Season Overview")
+    html = html_header("NL Officiating -- Season Overview")
+
+    NAV_SECTIONS = [
+        ('game-summary',   '📅', 'Game Summary'),
+        ('game-breakdown', '🔍', 'Game by Game'),
+        ('flag-breakdown', '🚩', 'Flag Breakdown'),
+        ('foul-table',     '📊', 'Foul Breakdown'),
+        ('foul-analysis',  '📋', 'Penalty Analysis'),
+        ('officials-list', '👤', 'Officials List'),
+        ('season-ranking', '🏆', 'Season Ranking'),
+        ('pos-rankings',   '📍', 'Position Rankings'),
+    ]
+    html += sidenav_html(NAV_SECTIONS)
 
     html += '<div class="toc">'
     html += '<strong>Contents</strong>'
-    for anchor, label in [
-        ('#game-summary',    'Game Summary'),
-        ('#game-breakdown',  'Game by Game Breakdown'),
-        ('#flag-breakdown',  'Flag Breakdown'),
-        ('#foul-analysis',   'Penalty Analysis'),
-        ('#officials-list',  'Officials List'),
-        ('#season-ranking',  'Season Accuracy Ranking'),
-        ('#pos-rankings',    'Position Rankings'),
-    ]:
-        html += f'<a href="{anchor}">{label}</a>'
+    for anchor, icon, label in NAV_SECTIONS:
+        html += f'<a href="#{anchor}">{icon} {label}</a>'
     html += '</div>'
+
+    html += explainer_box()
 
     # ── Game summary ──────────────────────────────────────────────────────────
     html += '<h2 id="game-summary">Game Summary</h2>'
-    html += table_start(['Game', 'Date', 'Penalties', 'Crew Accuracy',
-                         'Flag Breakdown'])
-    for game_id in sorted(games):
+    html += table_start(['Game', 'Penalties', 'Crew Accuracy', 'Flag Breakdown'])
+    for game_id in sorted(games, key=game_sort_key):
         info = games[game_id]
         rows = info['rows']
         home = info['home_team']
@@ -578,15 +889,15 @@ def build_combined_report(games, officials):
         flag_str    = ', '.join(
             f"{k}: {v}" for k, v in sorted(flag_counts.items())
         )
-        html += (f'<tr><td>{home} v {away}</td><td>{date}</td>'
+        html += (f'<tr><td>{format_game(game_id)}</td>'
                  f'<td>{n_penalties}</td>'
                  f'<td style="color:{col};font-weight:bold">{acc_str}</td>'
-                 f'<td>{flag_str or "—"}</td></tr>')
+                 f'<td>{flag_str or "--"}</td></tr>')
     html += table_end()
 
     # ── Game by game breakdown ────────────────────────────────────────────────
     html += '<h2 id="game-breakdown">Game by Game Breakdown</h2>'
-    for game_id in sorted(games):
+    for game_id in sorted(games, key=game_sort_key):
         info = games[game_id]
         home = info['home_team']
         away = info['away_team']
@@ -600,7 +911,7 @@ def build_combined_report(games, officials):
         col     = score_colour(acc)
 
         html += '<div class="game-section">'
-        html += (f'<h3>{home} v {away} — {date} '
+        html += (f'<h3>{format_game(game_id)} '
                  f'<span style="color:{col}">Crew accuracy: {acc_str}</span></h3>')
 
         # Officials table - sorted by position order
@@ -659,9 +970,9 @@ def build_combined_report(games, officials):
             initials  = r['official_initials'].strip()
             position  = r['position'].strip().upper()
             grade     = r['grade_code'].strip().upper()
-            off_name  = r['official_name'].strip() or initials or '—'
-            pos_name  = POSITION_NAMES.get(position, position) if position else '—'
-            grade_cell = grade_badge(grade) if grade else '—'
+            off_name  = r['official_name'].strip() or initials or '--'
+            pos_name  = POSITION_NAMES.get(position, position) if position else '--'
+            grade_cell = grade_badge(grade) if grade else '--'
             html += (f'<tr><td>{qtr}</td><td>{play}</td>'
                      f'<td>{foul_display(foul)}</td><td>{flag}</td>'
                      f'<td>{off_name}</td><td>{pos_name}</td>'
@@ -690,12 +1001,14 @@ def build_combined_report(games, officials):
     for flag in FLAG_ORDER:
         count = all_flags.get(flag, 0)
         pct   = (f"{round(count / total_flags * 100, 1)}%"
-                 if total_flags > 0 else '—')
+                 if total_flags > 0 else '--')
         html += (f'<tr><td><strong>{flag}</strong></td>'
                  f'<td>{count}</td><td>{pct}</td></tr>')
     html += table_end()
 
     # ── Penalty analysis ──────────────────────────────────────────────────────
+    html += build_foul_table(games)
+
     html += '<h2 id="foul-analysis">Penalty Analysis</h2>'
     html += '<p>Subcategories (PF, OFH, DPI, OPI, UC, DOF) are grouped together.</p>'
 
@@ -733,7 +1046,7 @@ def build_combined_report(games, officials):
         for flag in FLAG_ORDER:
             count = fc.get(flag, 0)
             pct   = (f"{round(count / t_flag * 100, 1)}%"
-                     if t_flag > 0 else '—')
+                     if t_flag > 0 else '--')
             html += (f'<tr><td><strong>{flag}</strong></td>'
                      f'<td>{count}</td><td>{pct}</td></tr>')
         html += table_end()
