@@ -52,7 +52,7 @@ OUTPUT_FOLDER   = Path("output")
 SCHEDULE_SHEET  = "Plan - NL"
 OFFICIALS_SHEET = "Officials and games"
 
-POSITION_CODES = {'R', 'U', 'H', 'L', 'B', 'F', 'S', 'C'}
+POSITION_CODES = {'R', 'U', 'D', 'L', 'B', 'F', 'S', 'C'}
 GRADE_CODES    = {'C', 'M', 'I', 'N', 'G', 'W'}
 
 PENALTY_COLUMNS = [
@@ -144,7 +144,7 @@ def parse_grade_official(code):
     Parse a GRADE OFFICIAL string into a list of (position, grade) pairs.
 
     e.g. 'RC'   -> [('R', 'C')]
-         'LCHC' -> [('L', 'C'), ('H', 'C')]
+         'LCDC' -> [('L', 'C'), ('D', 'C')]
          'LCRN' -> [('L', 'C'), ('R', 'N')]
     """
     if code is None or str(code).strip() == '':

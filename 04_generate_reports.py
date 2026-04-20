@@ -60,13 +60,13 @@ GRADE_NAMES = {
 }
 
 POSITION_NAMES = {
-    'R': 'Referee', 'U': 'Umpire', 'H': 'Head Linesman',
+    'R': 'Referee', 'U': 'Umpire', 'D': 'Deep Judge',
     'L': 'Line Judge', 'B': 'Back Judge', 'F': 'Field Judge',
     'S': 'Side Judge', 'C': 'Center Judge',
 }
 
 # Official sort order in game reports
-POSITION_ORDER = ['R', 'U', 'H', 'L', 'S', 'F', 'B', 'C']
+POSITION_ORDER = ['R', 'U', 'D', 'L', 'S', 'F', 'B', 'C']
 
 FLAG_ORDER = ['CC', 'MC', 'IC', 'NC', 'NG', 'W']
 

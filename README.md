@@ -25,13 +25,13 @@ The FLAG column holds the overall crew grade — did the crew collectively handl
 
 ### Official Position Codes
 
-Grades are linked to officials using single-letter position codes — for example `BC` means the Back Judge received a Correct Call grade, and `BCHC` means both the Back Judge and Head Linesman received Correct Call grades.
+Grades are linked to officials using single-letter position codes — for example `BC` means the Back Judge received a Correct Call grade, and `BCDC` means both the Back Judge and Deep Judge received Correct Call grades.
 
 | Code | Position |
 |------|----------|
 | R | Referee |
 | U | Umpire |
-| H | Head Linesman |
+| D | Deep Judge |
 | L | Line Judge |
 | S | Side Judge |
 | F | Field Judge |
@@ -53,6 +53,9 @@ nlstats/
 ├── nlplan/             ← schedule Excel file
 │   └── NL_dommerplan_2025.xlsx
 ├── output/             ← all reports are written here (auto-created)
+│   ├── flat_calls.csv
+│   ├── combined_report.html
+│   └── officials/
 ├── 01_check_files.py
 ├── 02_convert_to_csv.py
 ├── 03_build_flat_file.py
@@ -192,7 +195,7 @@ Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both pro
 
 ### Combined report sections
 
-- **Game Summary** — one row per game with penalty count, crew accuracy and flag breakdown
+- **Game Summary** — one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj — 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
 - **Game by Game Breakdown** — detailed section per game with officials table (sorted by position) and full penalty list
 - **Flag Breakdown** — counts of CC, MC, IC etc. across all games
 - **Penalty Analysis** — fouls grouped by category (PF, OFH, DPI, OPI, UC, DOF) with flag breakdown and subcode counts
@@ -206,7 +209,7 @@ All tables are interactive — click any column header to sort, and use the filt
 
 - Summary cards (accuracy, games, graded calls, positions worked)
 - Grade breakdown (C, M, I, N, G, W counts and percentages)
-- Performance by game (accuracy trend with visual bar)
+- Performance by game (accuracy trend with visual bar; game shown as `10 Maj — 89ers vs Oaks`)
 - Game by game breakdown with full call list sorted by position then play number
 
 ### Foul code display
@@ -239,7 +242,6 @@ Colour coding: green ≥ 90%, yellow ≥ 75%, orange ≥ 60%, red < 60%.
 **Links between combined report and individual reports are broken.** The combined report links to `officials/{initials}.html` using relative paths. Both files must remain in their generated locations — do not move the combined report out of `output/` or the individual reports out of `output/officials/`.
 
 ---
-
 ## Schedule File Format
 
 The schedule file must be an Excel file (`.xlsx`) placed in the `nlplan/` folder. It must contain a sheet named exactly `Plan - NL` with the following columns in the first row:
@@ -253,7 +255,7 @@ The schedule file must be an Excel file (`.xlsx`) placed in the `nlplan/` folder
 | `Ude` | Away team name |
 | `R` | Referee initials |
 | `U` | Umpire initials |
-| `H` | Head Linesman initials |
+| `D` | Deep Judge initials |
 | `L` | Line Judge initials |
 | `S` | Side Judge initials |
 | `F` | Field Judge initials |
