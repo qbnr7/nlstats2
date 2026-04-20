@@ -286,3 +286,66 @@ The file must have a single sheet with the following columns:
 | `GRADE OFFICIAL 2` | Individual grades for second penalty |
 
 Plays with no penalty are left blank and are skipped automatically.
+
+---
+
+## GitHub — Pushing and Pulling
+
+The project is hosted at `https://github.com/qbnr7/nlstats2`. Use the workflow below whenever you update scripts or add new game files.
+
+### First-time setup (already done)
+
+The repository is initialised and connected. You should not need to repeat these steps.
+
+### Pulling — getting the latest version from GitHub
+
+Run this before you start working to make sure your local copy is up to date:
+
+```bash
+cd ~/nlstats
+git pull origin master
+```
+
+If nothing has changed on GitHub since your last push it will say `Already up to date.`
+
+### Pushing — sending your changes to GitHub
+
+After updating scripts or adding new game files, run these three commands:
+
+```bash
+cd ~/nlstats
+git add .
+git commit -m "Short description of what changed"
+git push origin master
+```
+
+**Examples of good commit messages:**
+- `"Add September game files"`
+- `"Update 04_generate_reports with foul breakdown table"`
+- `"Rename Head Linesman to Deep Judge"`
+
+When prompted for a password, use your **Personal Access Token** (not your GitHub password).
+
+### Checking what has changed
+
+To see which files have been modified or added before committing:
+
+```bash
+git status
+```
+
+To see a summary of recent commits:
+
+```bash
+git log --oneline -10
+```
+
+### If you only want to push specific files
+
+Instead of `git add .` (which stages everything), you can stage individual files:
+
+```bash
+git add 04_generate_reports.py README.md
+git commit -m "Update report script and docs"
+git push origin master
+```
