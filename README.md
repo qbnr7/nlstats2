@@ -185,31 +185,40 @@ Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both pro
 
 ---
 
-## Script 04 — Generate Reports
+## Script 04 -- Generate Reports
 
-`04_generate_reports.py` reads `output/flat_calls.csv` and generates HTML reports.
+`04_generate_reports.py` reads `output/flat_calls.csv` and generates HTML reports. It also reads the schedule file from `nlplan/` to cross-reference the full assigned crew per game.
+
+**Dependencies:** `openpyxl` only. pandas is not used or required.
 
 **Output:**
-- `output/combined_report.html` — season overview for all audiences
-- `output/officials/{initials}.html` — one individual report per official
+- `output/combined_report.html` -- season overview for all audiences
+- `output/officials/{initials}.html` -- one individual report per official
+
+### Full crew display
+
+For each game, the script reads the schedule to find the complete list of assigned officials. Any official who was assigned but had no recorded calls is still shown in the officials table, greyed out with a circle marker and `--` in the accuracy column. This ensures the full crew is always visible even when some officials were not involved in any flagged play.
+
+The schedule is matched to flat file game IDs automatically. If the schedule has a `GameID` column that column is used directly. If not (older schedules), the game ID is constructed from `Dato + Maaned + Hjemme + Ude` to match the filename format.
 
 ### Combined report sections
 
-- **Game Summary** — one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj — 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
-- **Game by Game Breakdown** — detailed section per game with officials table (sorted by position) and full penalty list
-- **Flag Breakdown** — counts of CC, MC, IC etc. across all games
-- **Penalty Analysis** — fouls grouped by category (PF, OFH, DPI, OPI, UC, DOF) with flag breakdown and subcode counts
-- **Officials List** — all officials alphabetically with games, positions, accuracy and grade breakdown
-- **Season Accuracy Ranking** — officials ranked by accuracy (minimum 3 games to qualify)
-- **Position Rankings** — best official at each position (minimum 2 games at that position to qualify)
+- **Game Summary** -- one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj -- 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
+- **Game by Game Breakdown** -- detailed section per game with officials table (sorted by position) and full penalty list. Assigned officials with no calls are shown greyed out.
+- **Flag Breakdown** -- counts of CC, MC, IC etc. across all games
+- **Foul Breakdown** -- interactive table with one row per foul type, showing crew flag percentages (CC%, IC% etc.) and individual accuracy. Filterable by category, foul name and minimum flag count.
+- **Penalty Analysis** -- fouls grouped by category (PF, OFH, DPI, OPI, UC, DOF) with flag breakdown and subcode counts
+- **Officials List** -- all officials alphabetically with games, positions, accuracy and grade breakdown
+- **Season Accuracy Ranking** -- officials ranked by accuracy (minimum 3 games to qualify)
+- **Position Rankings** -- best official at each position (minimum 2 games at that position to qualify)
 
-All tables are interactive — click any column header to sort, and use the filter box above each table to search.
+All tables are interactive -- click any column header to sort, and use the filter box above each table to search. A sticky navigation panel on the right edge lets you jump between sections without scrolling.
 
 ### Individual report sections
 
-- Summary cards (accuracy, games, graded calls, positions worked)
+- Summary cards: Overall Accuracy, Games Officiated, Flags Thrown (all calls including G and W), Graded Calls (C/M/N/I only), and Positions Worked (one line per position showing games and flags at that position)
 - Grade breakdown (C, M, I, N, G, W counts and percentages)
-- Performance by game (accuracy trend with visual bar; game shown as `10 Maj — 89ers vs Oaks`)
+- Performance by game (accuracy trend with visual bar; game shown as `10 Maj -- 89ers vs Oaks`)
 - Game by game breakdown with full call list sorted by position then play number
 
 ### Foul code display
@@ -237,9 +246,13 @@ Colour coding: green ≥ 90%, yellow ≥ 75%, orange ≥ 60%, red < 60%.
 
 ### Common mistakes
 
-**No individual reports generated.** If officials show as 0 it means no officials were matched from the schedule. Check that the schedule has officials assigned in the position columns (R, U, H, L, S, F, B, C) and that the game file names match the Game IDs.
+**No individual reports generated.** If officials show as 0 it means no officials were matched from the schedule. Check that the schedule has officials assigned in the position columns (R, U, D, L, S, F, B, C) and that the game file names match the Game IDs.
 
-**Links between combined report and individual reports are broken.** The combined report links to `officials/{initials}.html` using relative paths. Both files must remain in their generated locations — do not move the combined report out of `output/` or the individual reports out of `output/officials/`.
+**An official is in the schedule but not shown in the game.** Make sure the game file name matches the `GameID` in the schedule exactly. Run `01_check_files.py` to diagnose mismatches.
+
+**An official appears greyed out with a circle marker.** This is expected -- it means they were assigned in the schedule but had no calls recorded in the game file. It is not an error.
+
+**Links between combined report and individual reports are broken.** The combined report links to `officials/{initials}.html` using relative paths. Both files must remain in their generated locations -- do not move the combined report out of `output/` or the individual reports out of `output/officials/`.
 
 ---
 ## Schedule File Format
