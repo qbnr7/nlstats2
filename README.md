@@ -194,6 +194,7 @@ Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both pro
 **Output:**
 - `output/combined_report.html` -- season overview for all audiences
 - `output/officials/{initials}.html` -- one individual report per official
+- `output/games/{game_id}.html` -- one shareable report per game
 
 ### Full crew display
 
@@ -220,6 +221,18 @@ All tables are interactive -- click any column header to sort, and use the filte
 - Grade breakdown (C, M, I, N, G, W counts and percentages)
 - Performance by game (accuracy trend with visual bar; game shown as `10 Maj -- 89ers vs Oaks`)
 - Game by game breakdown with full call list sorted by position then play number
+
+### Per-game reports
+
+One standalone HTML file is generated per game into `output/games/`. Each file contains:
+
+- A crew accuracy banner at the top
+- **Officials table** -- all assigned crew sorted by position, with accuracy and grade breakdown per official. Officials who were assigned but had no recorded calls are shown greyed out with a circle marker.
+- **Penalties table** -- every flagged play in the game showing quarter, play number, foul, crew grade, official name, position and individual grade
+
+The files are self-contained and can be shared directly -- for example posted to a Discord channel for the crew. All CSS is inline and the file has no external dependencies. It links back to `combined_report.html` and to individual official reports when opened locally.
+
+The Game Summary table in the combined report has a `View` link for each game that opens the corresponding per-game file directly.
 
 ### Foul code display
 
