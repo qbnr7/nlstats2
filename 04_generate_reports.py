@@ -17,6 +17,7 @@ from pathlib import Path
 from collections import defaultdict
 
 import re as _re
+from openpyxl import load_workbook
 
 def format_game(game_id):
     """10Maj-89ers-v-Oaks  →  10 Maj -- 89ers vs Oaks"""
@@ -44,9 +45,11 @@ def game_sort_key(game_id):
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-INPUT_FILE    = Path("output/flat_calls.csv")
-OUTPUT_FOLDER = Path("output")
-OFFICIALS_DIR = OUTPUT_FOLDER / "officials"
+INPUT_FILE      = Path("output/flat_calls.csv")
+OUTPUT_FOLDER   = Path("output")
+OFFICIALS_DIR   = OUTPUT_FOLDER / "officials"
+SCHEDULE_FOLDER = Path("nlplan")
+SCHEDULE_SHEET  = "Plan - NL"
 
 MIN_GAMES_RANKING  = 3
 MIN_GAMES_POSITION = 2
@@ -231,6 +234,98 @@ def pos_sort_key(pos):
 
 
 # ── Data loading ───────────────────────────────────────────────────────────────
+
+
+def load_schedule():
+    """Read the nlplan schedule and return crew per game_id.
+    Uses openpyxl directly -- no pandas required.
+    Falls back to constructing game_id from Dato+Maaned+Hjemme+Ude when
+    the GameID column is absent (e.g. 2025 schedule).
+    Handles legacy position code H (Head Linesman) -> D (Deep Judge).
+    Strips parens only for backup markers like (BT) -> BT,
+    not for nationality suffixes like FK(DE).
+    """
+    files = (list(SCHEDULE_FOLDER.glob('*.xlsx')) +
+             list(SCHEDULE_FOLDER.glob('*.xls')))
+    if not files:
+        print("  WARNING: No schedule file found in nlplan/ -- full crew display disabled")
+        return {}
+
+    try:
+        wb = load_workbook(files[0], read_only=True, data_only=True)
+    except Exception as e:
+        print(f"  WARNING: Could not open schedule ({e}) -- full crew display disabled")
+        return {}
+
+    if SCHEDULE_SHEET not in wb.sheetnames:
+        print(f"  WARNING: Sheet '{SCHEDULE_SHEET}' not found -- full crew display disabled")
+        wb.close()
+        return {}
+
+    ws   = wb[SCHEDULE_SHEET]
+    rows = [[cell.value for cell in row] for row in ws.rows]
+    wb.close()
+
+    if not rows:
+        return {}
+
+    # First row is headers
+    headers = [str(h).strip() if h is not None else '' for h in rows[0]]
+    HAS_GAMEID = 'GameID' in headers
+
+    # Position codes to read -- include legacy H for older schedules
+    POS_READ = list(POSITION_ORDER)
+    if 'H' in headers and 'H' not in POS_READ:
+        POS_READ = POS_READ + ['H']
+
+    def cell(row_dict, key):
+        val = row_dict.get(key)
+        return str(val).strip() if val is not None else ''
+
+    def make_game_id(row_dict):
+        dato  = cell(row_dict, 'Dato').split('.')[0]
+        maned = cell(row_dict, 'Måned')
+        home  = cell(row_dict, 'Hjemme').replace(' ', '_')
+        away  = cell(row_dict, 'Ude').replace(' ', '_')
+        if dato and maned and home and away:
+            return f"{dato}{maned}-{home}-v-{away}"
+        return ''
+
+    crew_by_game = {}
+    for raw in rows[1:]:
+        row_dict = dict(zip(headers, raw))
+
+        if HAS_GAMEID:
+            game_id = cell(row_dict, 'GameID')
+            if not game_id or game_id.lower() == 'nan':
+                game_id = make_game_id(row_dict)
+        else:
+            game_id = make_game_id(row_dict)
+
+        if not game_id or game_id.lower() == 'nan':
+            continue
+
+        game_id = game_id.replace(' ', '_')
+
+        positions = {}
+        for pos in POS_READ:
+            val = cell(row_dict, pos)
+            if not val or val.lower() == 'nan':
+                continue
+            # Strip parens only if whole value is a backup marker: (BT) -> BT
+            # but keep nationality suffixes: FK(DE) stays FK(DE)
+            if val.startswith('(') and val.endswith(')'):
+                val = val[1:-1].strip()
+            if val:
+                store_pos = 'D' if pos == 'H' else pos
+                positions[store_pos] = val
+
+        if positions:
+            crew_by_game[game_id] = positions
+
+    print(f"  Loaded crew assignments for {len(crew_by_game)} games from schedule")
+    return crew_by_game
+
 
 def load_data():
     games     = {}
@@ -831,7 +926,7 @@ def build_foul_table(games):
 
 
 
-def build_combined_report(games, officials):
+def build_combined_report(games, officials, crew_by_game=None):
     html = html_header("NL Officiating -- Season Overview")
 
     NAV_SECTIONS = [
@@ -929,7 +1024,24 @@ def build_combined_report(games, officials):
                     'positions': positions,
                     'grades':    grades,
                     'n_fouls':   len(calls),
+                    'assigned':  True,
                 }
+
+        # Add assigned officials from schedule who had no calls
+        norm_game_id = game_id.replace(' ', '_')
+
+        if crew_by_game and norm_game_id in crew_by_game:
+            for pos, initials in crew_by_game[norm_game_id].items():
+                if initials not in game_officials:
+                    # Look up name from other games if possible
+                    name = officials[initials]['name'] if initials in officials else initials
+                    game_officials[initials] = {
+                        'name':      name,
+                        'positions': [pos],
+                        'grades':    [],
+                        'n_fouls':   0,
+                        'assigned':  False,
+                    }
 
         if game_officials:
             html += '<h4>Officials</h4>'
@@ -943,14 +1055,25 @@ def build_combined_report(games, officials):
                 )
             )
             for initials, d in sorted_officials:
-                pos_str = ', '.join(
+                pos_str  = ', '.join(
                     POSITION_NAMES.get(p, p) for p in d['positions']
                 )
-                acc     = calc_accuracy(d['grades'])
-                acc_str = f"{acc}%" if acc is not None else "N/A"
-                col     = score_colour(acc)
-                link    = f"officials/{initials}.html"
-                html += (f'<tr><td><a href="{link}">{d["name"]}</a></td>'
+                acc      = calc_accuracy(d['grades'])
+                acc_str  = f"{acc}%" if acc is not None else "N/A"
+                col      = score_colour(acc)
+                link     = f"officials/{initials}.html"
+                assigned = d.get('assigned', True)
+                if assigned:
+                    name_cell = f'<a href="{link}">{d["name"]}</a>'
+                    row_style = ""
+                else:
+                    # No calls recorded -- show greyed out with note
+                    name_cell = (f'<a href="{link}">{d["name"]}</a>'
+                                 ' <span style="color:#aaa;font-size:0.85em"'
+                                 ' title="Assigned but no calls recorded">&#x25CB;</span>')
+                    row_style = ' style="color:#999"'
+                    acc_str   = "—"
+                html += (f'<tr{row_style}><td>{name_cell}</td>'
                          f'<td>{pos_str}</td><td>{d["n_fouls"]}</td>'
                          f'<td style="color:{col};font-weight:bold">{acc_str}</td>'
                          f'{grade_breakdown_cells(d["grades"])}</tr>')
@@ -1182,6 +1305,7 @@ def main():
 
     print(f"\nLoading data from {INPUT_FILE}...")
     games, officials = load_data()
+    crew_by_game    = load_schedule()
     print(f"  Games loaded    : {len(games)}")
     print(f"  Officials found : {len(officials)}")
 
@@ -1193,7 +1317,7 @@ def main():
         print(f"  {data['name']:30s} -> officials/{initials}.html")
 
     print(f"\nGenerating combined report...")
-    html = build_combined_report(games, officials)
+    html = build_combined_report(games, officials, crew_by_game)
     path = OUTPUT_FOLDER / "combined_report.html"
     path.write_text(html, encoding='utf-8')
     print(f"  -> combined_report.html")
