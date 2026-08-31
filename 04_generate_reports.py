@@ -250,9 +250,28 @@ def pos_sort_key(pos):
         return len(POSITION_ORDER)
 
 
-def normalise_position(pos):
-    """Map legacy position code H (Head Linesman) to D (Down Judge)."""
-    return 'D' if pos == 'H' else pos
+# Counts how many times the legacy 'H' position code was seen and
+# silently normalised, across schedule columns and flat_calls.csv rows.
+# Printed as a one-line summary at the end of main() so it doesn't get
+# lost in the per-occurrence warnings below.
+_legacy_h_count = 0
+
+
+def normalise_position(pos, context=''):
+    """
+    Map legacy position code H (Head Linesman) to D (Down Judge).
+    H should never appear in current data -- prints a warning whenever it
+    is encountered so stale files get noticed and fixed at the source,
+    but still normalises to D so processing is not interrupted.
+    """
+    global _legacy_h_count
+    if pos == 'H':
+        _legacy_h_count += 1
+        print(f"  WARNING: legacy position code 'H' found "
+              f"{context} -- normalising to 'D'. 'H' should not appear "
+              f"in current data; check the source file.")
+        return 'D'
+    return pos
 
 
 # ── Data loading ───────────────────────────────────────────────────────────────
@@ -349,7 +368,9 @@ def load_schedule():
                 val = val[1:-1].strip()
             if val:
                 # H read first, D read second (if present) -- D wins.
-                positions[normalise_position(pos)] = val
+                norm_pos = normalise_position(
+                    pos, context=f"in schedule column '{pos}' for game '{game_id}'")
+                positions[norm_pos] = val
 
         if positions:
             crew_by_game[game_id] = positions
@@ -467,7 +488,10 @@ def load_data():
             initials = row['official_initials'].strip()
             name     = row['official_name'].strip()
             grade    = row['grade_code'].strip().upper()
-            position = normalise_position(row['position'].strip().upper())
+            position = normalise_position(
+                row['position'].strip().upper(),
+                context=(f"in {INPUT_FILE} for game '{game_id}', "
+                         f"play {row['play_number'].strip()}"))
             foul     = row['foul_code'].strip()
             flag     = row['flag'].strip().upper()
             play     = row['play_number'].strip()
@@ -1176,7 +1200,9 @@ def build_game_report(game_id, info, officials, crew_by_game):
         qtr       = r['qtr'].strip()
         flag      = r['flag'].strip().upper()
         initials  = r['official_initials'].strip()
-        position  = normalise_position(r['position'].strip().upper())
+        position  = normalise_position(
+            r['position'].strip().upper(),
+            context=f"in game '{game_id}', play {play}")
         grade     = r['grade_code'].strip().upper()
         off_name  = r['official_name'].strip() or initials or '--'
         pos_name  = POSITION_NAMES.get(position, position) if position else '--'
@@ -1360,7 +1386,9 @@ def build_combined_report(games, officials, crew_by_game=None):
             qtr       = r['qtr'].strip()
             flag      = r['flag'].strip().upper()
             initials  = r['official_initials'].strip()
-            position  = r['position'].strip().upper()
+            position  = normalise_position(
+                r['position'].strip().upper(),
+                context=f"in game '{game_id}', play {play}")
             grade     = r['grade_code'].strip().upper()
             off_name  = r['official_name'].strip() or initials or '--'
             pos_name  = POSITION_NAMES.get(position, position) if position else '--'
@@ -1602,6 +1630,13 @@ def main():
         gpath = GAMES_DIR / f"{safe_name}.html"
         gpath.write_text(game_html, encoding='utf-8')
         print(f"  -> games/{safe_name}.html")
+
+    if _legacy_h_count:
+        print(f"\nWARNING: legacy position code 'H' was found and "
+              f"normalised to 'D' {_legacy_h_count} time(s) this run -- "
+              f"see warnings above for exactly where. 'H' should not "
+              f"appear in current data; the source schedule/game files "
+              f"should be updated to use 'D' instead.")
 
     print(f"\n{'─' * 50}")
     print(f"Done. Open output/combined_report.html to view.")

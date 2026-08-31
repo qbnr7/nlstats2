@@ -38,7 +38,7 @@ Grades are linked to officials using single-letter position codes — for exampl
 | B | Back Judge |
 | C | Center Judge |
 
-Note: `D` (Down Judge) used to be called `H` (Head Linesman) in older schedules and game files. Both codes are still accepted as input — the scripts normalise `H` to `D` automatically, so every generated report only ever shows `D` / Down Judge, never `H`.
+Note: `D` (Down Judge) used to be called `H` (Head Linesman) in older schedules and game files. Both codes are still accepted as input — the scripts normalise `H` to `D` automatically, so every generated report only ever shows `D` / Down Judge, never `H`. `H` should not appear in current schedules or game files, though, so every time it's found (in a schedule position column or a GRADE OFFICIAL code) `03_build_flat_file.py` and `04_generate_reports.py` print a warning naming the exact game/play/column it came from, plus a one-line total count at the end of the run. Processing is not stopped — the value is still normalised to `D` and the run completes — but the warnings are there so stale `H` usage in the source files gets noticed and cleaned up rather than silently passing through.
 
 Note: The letter `C` is used both as a position code (Center Judge) and a grade code (Correct). The parser handles this automatically by always reading characters in pairs — the first letter is the position, the second is the grade.
 

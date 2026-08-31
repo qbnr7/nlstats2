@@ -71,9 +71,28 @@ MINIMAL_STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </styleSheet>"""
 
 
-def normalise_position(pos):
-    """Map legacy position code H (Head Linesman) to D (Down Judge)."""
-    return 'D' if pos == 'H' else pos
+# Counts how many times the legacy 'H' position code was seen and
+# silently normalised, across schedule columns and GRADE OFFICIAL codes.
+# Printed as a one-line summary at the end of main() so it doesn't get
+# lost in the per-occurrence warnings below.
+_legacy_h_count = 0
+
+
+def normalise_position(pos, context=''):
+    """
+    Map legacy position code H (Head Linesman) to D (Down Judge).
+    H should never appear in current data -- prints a warning whenever it
+    is encountered so stale files get noticed and fixed at the source,
+    but still normalises to D so processing is not interrupted.
+    """
+    global _legacy_h_count
+    if pos == 'H':
+        _legacy_h_count += 1
+        print(f"    WARNING: legacy position code 'H' found "
+              f"{context} -- normalising to 'D'. 'H' should not appear "
+              f"in current data; check the source file.")
+        return 'D'
+    return pos
 
 # ── Excel reader ───────────────────────────────────────────────────────────────
 
@@ -150,7 +169,7 @@ def load_xlsx(file_path, sheet_name=None):
 
 # ── Grade official parser ──────────────────────────────────────────────────────
 
-def parse_grade_official(code):
+def parse_grade_official(code, context=''):
     """
     Parse a GRADE OFFICIAL string into a list of (position, grade) pairs.
     Legacy position code H is normalised to D before being returned.
@@ -170,7 +189,9 @@ def parse_grade_official(code):
         grade = code[i + 1]
 
         if pos in POSITION_CODES and grade in GRADE_CODES:
-            pairs.append((normalise_position(pos), grade))
+            prefix = f"in {context}, " if context else "in "
+            full_context = f"{prefix}GRADE OFFICIAL code '{code}'"
+            pairs.append((normalise_position(pos, context=full_context), grade))
             i += 2
         else:
             print(f"    Warning: unexpected characters '{code[i:i+2]}' "
@@ -229,7 +250,9 @@ def load_schedule(schedule_file):
             if val and val.lower() != 'nan':
                 # H is read before D, so a D column (if present)
                 # overwrites it -- D is dominant.
-                positions[normalise_position(pos)] = val.split('+')[0].strip()
+                norm_pos = normalise_position(
+                    pos, context=f"in schedule column '{pos}' for game '{game_id}'")
+                positions[norm_pos] = val.split('+')[0].strip()
 
         schedule[game_id] = {
             'date':      date,
@@ -265,7 +288,9 @@ def process_game_file(file_path, game_id, game_info, officials):
 
             foul_code = str(foul_code).strip()
             flag      = str(flag).strip() if flag is not None else ''
-            pairs     = parse_grade_official(grade_official)
+            pairs     = parse_grade_official(
+                grade_official,
+                context=f"game '{game_id}', play {play_number}")
 
             if not pairs:
                 rows.append(build_row(game_id, game_info, play_number, qtr,
@@ -370,6 +395,12 @@ def main():
         print(f"Not in schedule ({len(unmatched)}):")
         for g in unmatched:
             print(f"  - {g}")
+    if _legacy_h_count:
+        print(f"\nWARNING: legacy position code 'H' was found and "
+              f"normalised to 'D' {_legacy_h_count} time(s) this run -- "
+              f"see warnings above for exactly where. 'H' should not "
+              f"appear in current data; the source schedule/game files "
+              f"should be updated to use 'D' instead.")
 
 
 if __name__ == "__main__":
