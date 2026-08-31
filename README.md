@@ -214,6 +214,8 @@ The schedule is matched to flat file game IDs automatically. If the schedule has
 
 **Every "games" count in every report is based on schedule assignment, not on whether a flag was thrown.** An official's Games Officiated total, their row in the Officials List and Season Accuracy Ranking, and their Games at Position count in Position Rankings all include every game they were scheduled for in `nlplan/`, including games where they had zero recorded penalties at their position. Accuracy percentages are unaffected by this -- those are still only ever calculated from actual graded calls -- but the games/games-at-position counts themselves reflect assignment, not activity.
 
+The same rule applies to **which positions show up** for an official, not just how many games are counted at each one. The Officials List "Positions" column and an individual report's "Positions Worked" summary card both list every position an official was ever scheduled for, even a position where they went every game without throwing a single flag -- it still appears, just with `Flags 0`, rather than being left off the list entirely.
+
 ### Combined report sections
 
 - **Game Summary** -- one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj -- 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
@@ -340,6 +342,25 @@ git clone https://github.com/qbnr7/nlstats2.git
 cd nlstats2
 ```
 
+### Logging in — authenticating with GitHub
+
+The first time you run `git push` or `git pull` on a machine (or after your saved credentials expire or get cleared), Git will stop and ask you to log in before it can talk to GitHub. What that looks like depends on your setup:
+
+- **In a plain terminal**, you'll see prompts like:
+  ```
+  Username for 'https://github.com': your-github-username
+  Password for 'https://your-github-username@github.com': 
+  ```
+- **On macOS/Windows with a Git GUI or credential manager installed**, a small login popup window may appear instead of a terminal prompt.
+
+Either way, enter the same two things:
+- **Username** — your GitHub username (not your email).
+- **Password** — your **Personal Access Token**, not your actual GitHub account password. GitHub stopped accepting real account passwords for this years ago. See [Creating a Personal Access Token](#creating-a-personal-access-token) below if you don't have one yet.
+
+Once you've logged in successfully once, see [Saving your token so you don't have to retype it](#saving-your-token-so-you-dont-have-to-retype-it) so you aren't asked again on every single push/pull.
+
+If a login attempt fails with something like `Authentication failed` or `403`, the most common causes are: you typed your GitHub password instead of a token, the token expired, or the token's `repo` scope wasn't ticked when it was created — regenerate a token (below) and try again.
+
 ### Pulling — getting the latest version from GitHub
 
 Run this before you start working to make sure your local copy is up to date:
@@ -367,7 +388,7 @@ git push origin main
 - `"Update 04_generate_reports with foul breakdown table"`
 - `"Fix schedule loader picking up junk rows as games"`
 
-When prompted for a username and password, use your GitHub username and your **Personal Access Token** as the password (not your GitHub account password — see below for how to create one). If you don't want to re-enter it every time, see [Saving your token so you don't have to retype it](#saving-your-token-so-you-dont-have-to-retype-it).
+If Git prompts you to log in at this point, see [Logging in — authenticating with GitHub](#logging-in--authenticating-with-github) above.
 
 ### Checking what has changed
 
