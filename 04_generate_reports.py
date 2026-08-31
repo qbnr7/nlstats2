@@ -250,6 +250,22 @@ def pos_sort_key(pos):
         return len(POSITION_ORDER)
 
 
+def scheduled_position(crew_by_game, game_id, initials):
+    """
+    Look up which position an official was scheduled for in a given game,
+    per the nlplan schedule. Used so a "clean" game (assigned but no
+    flags recorded against them) still counts and shows a position,
+    instead of silently not counting toward games-at-position at all.
+    """
+    if not crew_by_game:
+        return None
+    norm_id = game_id.replace(' ', '_')
+    for pos, init in crew_by_game.get(norm_id, {}).items():
+        if init == initials:
+            return pos
+    return None
+
+
 # Counts how many times the legacy 'H' position code was seen and
 # silently normalised, across schedule columns and flat_calls.csv rows.
 # Printed as a one-line summary at the end of main() so it doesn't get
@@ -778,18 +794,6 @@ def build_official_report(initials, data, games, crew_by_game=None):
     per_game_accuracy = {}
     positions_worked  = defaultdict(int)
 
-    def scheduled_position(game_id):
-        """Look up which position this official was scheduled for in a
-        given game, per the nlplan schedule. Used so clean games (no
-        calls recorded) still show a position instead of a blank."""
-        if not crew_by_game:
-            return None
-        norm_id = game_id.replace(' ', '_')
-        for pos, init in crew_by_game.get(norm_id, {}).items():
-            if init == initials:
-                return pos
-        return None
-
     pos_games = defaultdict(set)   # position -> set of game_ids
     for game_id in games_worked:
         calls       = calls_by_game[game_id]
@@ -807,7 +811,7 @@ def build_official_report(initials, data, games, crew_by_game=None):
         # for the position rankings. Does not touch positions_worked,
         # which tracks actual flags thrown, not scheduled assignments.
         if not calls:
-            sched_pos = scheduled_position(game_id)
+            sched_pos = scheduled_position(crew_by_game, game_id, initials)
             if sched_pos:
                 pos_games[sched_pos].add(game_id)
 
@@ -889,7 +893,7 @@ def build_official_report(initials, data, games, crew_by_game=None):
         if not pos_list:
             # No calls recorded (clean game) -- fall back to the
             # scheduled position so the column isn't blank.
-            sched_pos = scheduled_position(game_id)
+            sched_pos = scheduled_position(crew_by_game, game_id, initials)
             if sched_pos:
                 pos_list = POSITION_NAMES.get(sched_pos, sched_pos)
         n_calls   = len([c for c in calls if c['grade'] in GRADE_SCORES])
@@ -1548,10 +1552,19 @@ def build_combined_report(games, officials, crew_by_game=None):
         pos_ranking = []
 
         for initials, data in officials.items():
-            pos_games = [
+            pos_games = set(
                 gid for gid, calls in data['calls_by_game'].items()
                 if any(c['position'] == pos_code for c in calls)
-            ]
+            )
+            # Also credit games where this official was scheduled at this
+            # position but threw no flag there (a "clean" game) -- those
+            # games have no calls to match on above, but they still count
+            # as games worked at this position, not just games flagged.
+            for gid, calls in data['calls_by_game'].items():
+                if gid in pos_games or calls:
+                    continue
+                if scheduled_position(crew_by_game, gid, initials) == pos_code:
+                    pos_games.add(gid)
             if len(pos_games) < MIN_GAMES_POSITION:
                 continue
             pos_grades = [

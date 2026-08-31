@@ -212,6 +212,8 @@ For each game, the script reads the schedule to find the complete list of assign
 
 The schedule is matched to flat file game IDs automatically. If the schedule has a `GameID` column that column is used directly, and rows with a blank `GameID` cell (e.g. junk or formula/summary rows at the bottom of the sheet) are skipped. Only when the schedule has no `GameID` column at all (older schedules) is the game ID constructed from `Dato + Maaned + Hjemme + Ude` to match the filename format.
 
+**Every "games" count in every report is based on schedule assignment, not on whether a flag was thrown.** An official's Games Officiated total, their row in the Officials List and Season Accuracy Ranking, and their Games at Position count in Position Rankings all include every game they were scheduled for in `nlplan/`, including games where they had zero recorded penalties at their position. Accuracy percentages are unaffected by this -- those are still only ever calculated from actual graded calls -- but the games/games-at-position counts themselves reflect assignment, not activity.
+
 ### Combined report sections
 
 - **Game Summary** -- one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj -- 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
