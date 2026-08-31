@@ -10,6 +10,21 @@ Output:
 
 Usage:
     python3 -W ignore 04_generate_reports.py
+
+Changelog:
+    v2 - H (legacy "Head Linesman" position code) is now normalised to D
+         ("Down Judge") consistently, and D is read as dominant if a
+         schedule row somehow has both.
+       - Fixed games-officiated undercounting: an official's game count
+         (and an official's very existence in the report) previously came
+         only from rows in flat_calls.csv, which only exist when a play
+         had a foul AND a parseable grade for that position. A clean game
+         (no penalty on their position), a game with zero penalties
+         recorded at all, or an official with zero graded calls all
+         season would silently disappear from every count. Games and
+         officials are now cross-checked against the schedule
+         (nlplan/*.xlsx) and merged in, so every scheduled game/official
+         is counted even with zero calls.
 """
 
 import csv
@@ -51,6 +66,7 @@ OFFICIALS_DIR   = OUTPUT_FOLDER / "officials"
 SCHEDULE_FOLDER = Path("nlplan")
 GAMES_DIR       = OUTPUT_FOLDER / "games"
 SCHEDULE_SHEET  = "Plan - NL"
+OFFICIALS_SHEET = "Officials and games"
 
 MIN_GAMES_RANKING  = 3
 MIN_GAMES_POSITION = 2
@@ -64,7 +80,7 @@ GRADE_NAMES = {
 }
 
 POSITION_NAMES = {
-    'R': 'Referee', 'U': 'Umpire', 'D': 'Deep Judge',
+    'R': 'Referee', 'U': 'Umpire', 'D': 'Down Judge',
     'L': 'Line Judge', 'B': 'Back Judge', 'F': 'Field Judge',
     'S': 'Side Judge', 'C': 'Center Judge',
 }
@@ -234,6 +250,11 @@ def pos_sort_key(pos):
         return len(POSITION_ORDER)
 
 
+def normalise_position(pos):
+    """Map legacy position code H (Head Linesman) to D (Down Judge)."""
+    return 'D' if pos == 'H' else pos
+
+
 # ── Data loading ───────────────────────────────────────────────────────────────
 
 
@@ -242,7 +263,8 @@ def load_schedule():
     Uses openpyxl directly -- no pandas required.
     Falls back to constructing game_id from Dato+Maaned+Hjemme+Ude when
     the GameID column is absent (e.g. 2025 schedule).
-    Handles legacy position code H (Head Linesman) -> D (Deep Judge).
+    Handles legacy position code H (Head Linesman) -> D (Down Judge),
+    with D dominant if a row somehow has both.
     Strips parens only for backup markers like (BT) -> BT,
     not for nationality suffixes like FK(DE).
     """
@@ -274,10 +296,12 @@ def load_schedule():
     headers = [str(h).strip() if h is not None else '' for h in rows[0]]
     HAS_GAMEID = 'GameID' in headers
 
-    # Position codes to read -- include legacy H for older schedules
+    # Position codes to read -- include legacy H for older schedules.
+    # H is read *before* D so that if a schedule ever has both columns,
+    # D (read second, so it overwrites) wins -- D is the dominant code.
     POS_READ = list(POSITION_ORDER)
     if 'H' in headers and 'H' not in POS_READ:
-        POS_READ = POS_READ + ['H']
+        POS_READ = ['H'] + POS_READ
 
     def cell(row_dict, key):
         val = row_dict.get(key)
@@ -297,10 +321,16 @@ def load_schedule():
         row_dict = dict(zip(headers, raw))
 
         if HAS_GAMEID:
+            # A GameID column exists, so it is authoritative -- a blank
+            # cell means this row is a junk/summary/formula row at the
+            # bottom of the sheet, not a game missing its ID. Skip it
+            # rather than reconstructing a bogus ID from whatever
+            # leftover Dato/Maaned/Hjemme/Ude values happen to be there.
             game_id = cell(row_dict, 'GameID')
-            if not game_id or game_id.lower() == 'nan':
-                game_id = make_game_id(row_dict)
         else:
+            # Legacy schedule with no GameID column at all -- the only
+            # way to identify the game is to build the ID from the date
+            # and team columns.
             game_id = make_game_id(row_dict)
 
         if not game_id or game_id.lower() == 'nan':
@@ -318,14 +348,112 @@ def load_schedule():
             if val.startswith('(') and val.endswith(')'):
                 val = val[1:-1].strip()
             if val:
-                store_pos = 'D' if pos == 'H' else pos
-                positions[store_pos] = val
+                # H read first, D read second (if present) -- D wins.
+                positions[normalise_position(pos)] = val
 
         if positions:
             crew_by_game[game_id] = positions
 
     print(f"  Loaded crew assignments for {len(crew_by_game)} games from schedule")
     return crew_by_game
+
+
+def load_official_names():
+    """
+    Read the 'Officials and games' sheet and return {initials -> full name}.
+    This exists so an official with zero graded calls all season (i.e. no
+    row for them anywhere in flat_calls.csv) still gets a real name
+    instead of showing up labelled only by their initials.
+    """
+    files = (list(SCHEDULE_FOLDER.glob('*.xlsx')) +
+             list(SCHEDULE_FOLDER.glob('*.xls')))
+    if not files:
+        return {}
+
+    try:
+        wb = load_workbook(files[0], read_only=True, data_only=True)
+    except Exception:
+        return {}
+
+    if OFFICIALS_SHEET not in wb.sheetnames:
+        wb.close()
+        return {}
+
+    ws   = wb[OFFICIALS_SHEET]
+    rows = [[cell.value for cell in row] for row in ws.rows]
+    wb.close()
+
+    if len(rows) < 2:
+        return {}
+
+    # Row 0 is a merged title row, row 1 has the real headers
+    headers = [str(h).strip() if h is not None else '' for h in rows[1]]
+
+    names = {}
+    for raw in rows[2:]:
+        row_dict = dict(zip(headers, raw))
+        initials = str(row_dict.get('Initialer') or '').strip()
+        name     = str(row_dict.get('Navn') or '').strip()
+        if initials and name and initials.lower() != 'nan' and name.lower() != 'nan':
+            names[initials] = name
+
+    return names
+
+
+def merge_schedule_into_data(games, officials, crew_by_game, official_names):
+    """
+    Make every official's 'games' set reflect every game they were
+    actually scheduled for -- not just games where flat_calls.csv happens
+    to have a row for their position. Without this, three things
+    silently vanish from every report:
+
+      1. A game where an official's position had zero flagged penalties
+         (no row is ever written for a clean assignment).
+      2. A game with zero penalties recorded at all (that game never
+         appears in flat_calls.csv, so it never enters `games` either).
+      3. An official who had zero graded calls the entire season (they
+         never appear in flat_calls.csv at all, so they'd be completely
+         absent from the Officials List / rankings).
+
+    This is called once, right after load_data() and load_schedule(),
+    before any report is built.
+    """
+    if not crew_by_game:
+        return
+
+    # crew_by_game keys are normalised with underscores (spaces -> _);
+    # games/officials keys use the raw game_id straight from
+    # flat_calls.csv. Build a lookup so both refer to the same game.
+    norm_to_actual = {gid.replace(' ', '_'): gid for gid in games}
+
+    for norm_game_id, positions in crew_by_game.items():
+        actual_game_id = norm_to_actual.get(norm_game_id, norm_game_id)
+
+        # Game had zero penalties recorded at all -> it never made it
+        # into flat_calls.csv. Create an empty entry so it still shows
+        # up (0 penalties / N/A accuracy) instead of vanishing entirely.
+        if actual_game_id not in games:
+            games[actual_game_id] = {
+                'date': '', 'home_team': '', 'away_team': '', 'rows': [],
+            }
+
+        for pos, initials in positions.items():
+            if not initials:
+                continue
+            if initials not in officials:
+                officials[initials] = {
+                    'name':          official_names.get(initials, initials),
+                    'games':         set(),
+                    'calls_by_game': defaultdict(list),
+                }
+            elif not officials[initials].get('name'):
+                officials[initials]['name'] = official_names.get(initials, initials)
+
+            officials[initials]['games'].add(actual_game_id)
+            # Touch calls_by_game so this game shows up in per-game
+            # breakdowns with an (empty) call list, rather than being
+            # absent from calls_by_game entirely.
+            officials[initials]['calls_by_game'].setdefault(actual_game_id, [])
 
 
 def load_data():
@@ -339,7 +467,7 @@ def load_data():
             initials = row['official_initials'].strip()
             name     = row['official_name'].strip()
             grade    = row['grade_code'].strip().upper()
-            position = row['position'].strip().upper()
+            position = normalise_position(row['position'].strip().upper())
             foul     = row['foul_code'].strip()
             flag     = row['flag'].strip().upper()
             play     = row['play_number'].strip()
@@ -580,8 +708,6 @@ def grade_breakdown_cells(grades):
         counts[g] += 1
     return ''.join(f'<td>{counts.get(g, 0)}</td>'
                    for g in ['C', 'M', 'I', 'N', 'G', 'W'])
-
-
 # ── Individual official report ─────────────────────────────────────────────────
 
 
@@ -619,7 +745,7 @@ def explainer_box():
 </div>
 """
 
-def build_official_report(initials, data, games):
+def build_official_report(initials, data, games, crew_by_game=None):
     name          = data['name']
     games_worked  = sorted(data['games'], key=game_sort_key)
     calls_by_game = data['calls_by_game']
@@ -627,6 +753,18 @@ def build_official_report(initials, data, games):
     all_grades        = []
     per_game_accuracy = {}
     positions_worked  = defaultdict(int)
+
+    def scheduled_position(game_id):
+        """Look up which position this official was scheduled for in a
+        given game, per the nlplan schedule. Used so clean games (no
+        calls recorded) still show a position instead of a blank."""
+        if not crew_by_game:
+            return None
+        norm_id = game_id.replace(' ', '_')
+        for pos, init in crew_by_game.get(norm_id, {}).items():
+            if init == initials:
+                return pos
+        return None
 
     pos_games = defaultdict(set)   # position -> set of game_ids
     for game_id in games_worked:
@@ -638,6 +776,16 @@ def build_official_report(initials, data, games):
             if c['position']:
                 positions_worked[c['position']] += 1
                 pos_games[c['position']].add(game_id)
+
+        # Clean game / no calls recorded for this official (or a game
+        # with zero penalties at all): still credit the game to their
+        # scheduled position so it counts toward "games at position"
+        # for the position rankings. Does not touch positions_worked,
+        # which tracks actual flags thrown, not scheduled assignments.
+        if not calls:
+            sched_pos = scheduled_position(game_id)
+            if sched_pos:
+                pos_games[sched_pos].add(game_id)
 
     overall_accuracy = calc_accuracy(all_grades)
     grade_counts     = defaultdict(int)
@@ -667,15 +815,15 @@ def build_official_report(initials, data, games):
     pos_lines = ''.join(
         f'<div style="margin:3px 0">'
         f'<strong>{POSITION_NAMES.get(p, p)}</strong>'
-        f', Games {len(pos_games[p])}'
-        f', Flags {n}</div>'
+        f', Games {len(pos_games[p])}'
+        f', Flags {n}</div>'
         for p, n in sorted(positions_worked.items(), key=lambda x: pos_sort_key(x[0]))
     ) or '<div>N/A</div>'
     html += '<div class="summary-grid">'
     html += (f'<div class="summary-card"><div class="value" style="color:{colour}">'
              f'{acc_display}</div>'
              f'<div class="label">Overall Accuracy</div>'
-             f'<div class="sublabel">Based on {n_graded} graded calls (C / M / N / I)</div></div>')
+             f'<div class="sublabel">Based on {n_graded} graded calls (C / M / N / I)</div></div>')
     html += (f'<div class="summary-card"><div class="value">{len(games_worked)}</div>'
              f'<div class="label">Games Officiated</div></div>')
     html += (f'<div class="summary-card"><div class="value">{n_flags_total}</div>'
@@ -683,7 +831,7 @@ def build_official_report(initials, data, games):
              f'<div class="sublabel">All calls including non-gradeable (G) and waived (W)</div></div>')
     html += (f'<div class="summary-card"><div class="value">{n_graded}</div>'
              f'<div class="label">Graded Calls</div>'
-             f'<div class="sublabel">C / M / N / I only -- used for accuracy</div></div>')
+             f'<div class="sublabel">C / M / N / I only -- used for accuracy</div></div>')
     html += (f'<div class="summary-card" style="min-width:220px">'
              f'<div class="label" style="margin-bottom:6px;font-weight:bold">Positions Worked</div>'
              f'<div style="font-size:0.93em">{pos_lines}</div></div>')
@@ -714,6 +862,12 @@ def build_official_report(initials, data, games):
             set(c['position'] for c in calls if c['position']),
             key=pos_sort_key
         ))
+        if not pos_list:
+            # No calls recorded (clean game) -- fall back to the
+            # scheduled position so the column isn't blank.
+            sched_pos = scheduled_position(game_id)
+            if sched_pos:
+                pos_list = POSITION_NAMES.get(sched_pos, sched_pos)
         n_calls   = len([c for c in calls if c['grade'] in GRADE_SCORES])
         acc       = per_game_accuracy[game_id]
         acc_str   = f"{acc}%" if acc is not None else "N/A"
@@ -742,6 +896,12 @@ def build_official_report(initials, data, games):
         html += '<div class="game-section">'
         html += (f'<h3>{format_game(game_id)} '
                  f'<span style="color:{col}">({acc_str})</span></h3>')
+
+        if not calls:
+            html += '<p style="color:#888">No penalties recorded for this official in this game.</p>'
+            html += '</div>'
+            continue
+
         html += table_start(['Qtr', 'Play', 'Position', 'Foul', 'Flag', 'Grade'])
         # Sort calls by position order, then play number
         sorted_calls = sorted(
@@ -777,9 +937,6 @@ def sidenav_html(sections):
                  f'</a>')
     html += '</nav>'
     return html
-
-
-
 
 
 def build_foul_table(games):
@@ -926,8 +1083,6 @@ def build_foul_table(games):
     return '\n'.join(lines) + '\n'
 
 
-
-
 def build_game_report(game_id, info, officials, crew_by_game):
     """Standalone HTML file for a single game -- officials table + penalties."""
     rows   = info['rows']
@@ -974,6 +1129,8 @@ def build_game_report(game_id, info, officials, crew_by_game):
                     'n_fouls':   0,
                     'assigned':  False,
                 }
+            elif not game_officials[initials]['positions']:
+                game_officials[initials]['positions'] = [pos]
 
     html += '<h2>Officials</h2>'
     if game_officials:
@@ -1019,7 +1176,7 @@ def build_game_report(game_id, info, officials, crew_by_game):
         qtr       = r['qtr'].strip()
         flag      = r['flag'].strip().upper()
         initials  = r['official_initials'].strip()
-        position  = r['position'].strip().upper()
+        position  = normalise_position(r['position'].strip().upper())
         grade     = r['grade_code'].strip().upper()
         off_name  = r['official_name'].strip() or initials or '--'
         pos_name  = POSITION_NAMES.get(position, position) if position else '--'
@@ -1152,6 +1309,8 @@ def build_combined_report(games, officials, crew_by_game=None):
                         'n_fouls':   0,
                         'assigned':  False,
                     }
+                elif not game_officials[initials]['positions']:
+                    game_officials[initials]['positions'] = [pos]
 
         if game_officials:
             html += '<h4>Officials</h4>'
@@ -1416,13 +1575,15 @@ def main():
 
     print(f"\nLoading data from {INPUT_FILE}...")
     games, officials = load_data()
-    crew_by_game    = load_schedule()
+    crew_by_game     = load_schedule()
+    official_names   = load_official_names()
+    merge_schedule_into_data(games, officials, crew_by_game, official_names)
     print(f"  Games loaded    : {len(games)}")
     print(f"  Officials found : {len(officials)}")
 
     print(f"\nGenerating individual reports...")
     for initials, data in sorted(officials.items()):
-        html = build_official_report(initials, data, games)
+        html = build_official_report(initials, data, games, crew_by_game)
         path = OFFICIALS_DIR / f"{initials}.html"
         path.write_text(html, encoding='utf-8')
         print(f"  {data['name']:30s} -> officials/{initials}.html")

@@ -1,0 +1,9 @@
+# Generated pipeline output -- recreated by run_all.py
+output/
+
+# CSV files converted from data/*.xlsx by 02_convert_to_csv.py
+data/*.csv
+
+# Python
+__pycache__/
+*.pyc

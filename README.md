@@ -25,18 +25,20 @@ The FLAG column holds the overall crew grade — did the crew collectively handl
 
 ### Official Position Codes
 
-Grades are linked to officials using single-letter position codes — for example `BC` means the Back Judge received a Correct Call grade, and `BCDC` means both the Back Judge and Deep Judge received Correct Call grades.
+Grades are linked to officials using single-letter position codes — for example `BC` means the Back Judge received a Correct Call grade, and `BCDC` means both the Back Judge and Down Judge received Correct Call grades.
 
 | Code | Position |
 |------|----------|
 | R | Referee |
 | U | Umpire |
-| D | Deep Judge |
+| D | Down Judge |
 | L | Line Judge |
 | S | Side Judge |
 | F | Field Judge |
 | B | Back Judge |
 | C | Center Judge |
+
+Note: `D` (Down Judge) used to be called `H` (Head Linesman) in older schedules and game files. Both codes are still accepted as input — the scripts normalise `H` to `D` automatically, so every generated report only ever shows `D` / Down Judge, never `H`.
 
 Note: The letter `C` is used both as a position code (Center Judge) and a grade code (Correct). The parser handles this automatically by always reading characters in pairs — the first letter is the position, the second is the grade.
 
@@ -44,18 +46,20 @@ Note: The letter `C` is used both as a position code (Center Judge) and a grade 
 
 ## Folder Structure
 
-All scripts must be run from the project root folder (`nlstats/`). The folder structure must look like this:
+All scripts must be run from the project root folder (`nlstats2/`). The folder structure must look like this:
 
 ```
-nlstats/
-├── data/               ← game CSV files (produced by 02_convert_to_csv.py)
-│   └── *.xlsx          ← original game Excel files go here
+nlstats2/
+├── data/               ← original game Excel files go here
+│   ├── *.xlsx          ← one file per game, named to match the schedule's GameID
+│   └── *.csv           ← optional CSV copies (produced by 02_convert_to_csv.py, not required by the pipeline)
 ├── nlplan/             ← schedule Excel file
 │   └── NL_dommerplan_2025.xlsx
 ├── output/             ← all reports are written here (auto-created)
 │   ├── flat_calls.csv
 │   ├── combined_report.html
-│   └── officials/
+│   ├── officials/
+│   └── games/
 ├── 01_check_files.py
 ├── 02_convert_to_csv.py
 ├── 03_build_flat_file.py
@@ -128,7 +132,7 @@ If the schedule file cannot be read, a diagnostic error report is written instea
 
 ## Script 02 — Convert to CSV
 
-`02_convert_to_csv.py` converts game Excel files in `data/` to CSV format. This is a one-time conversion step needed because the game Excel files have a formatting quirk (missing `styles.xml`) that prevents standard Excel readers from opening them. Converting to CSV removes all formatting and produces clean data files.
+`02_convert_to_csv.py` converts game Excel files in `data/` to CSV format. This is useful as a quick, dependency-free way to eyeball a game file's raw contents (e.g. in a text editor or spreadsheet app) when troubleshooting.
 
 **Output:** one `.csv` file per `.xlsx` file, written into `data/`
 
@@ -136,9 +140,11 @@ The original Excel files are not modified or deleted.
 
 **The schedule file in `nlplan/` does not need converting** — it reads fine as-is.
 
+**Note:** `03_build_flat_file.py` reads the original `.xlsx` game files directly — it does not use the `.csv` files this script produces. Both game files and the schedule can have a formatting quirk (a missing or malformed `styles.xml`) that trips up standard Excel readers; `03_build_flat_file.py` detects and repairs this itself before reading, so running this step first is optional and only needed if you want CSV copies of the game files for your own reference.
+
 ### Common mistakes
 
-**Running the script from the wrong folder.** Always run scripts from the `nlstats/` project root, not from inside `data/` or any subfolder.
+**Running the script from the wrong folder.** Always run scripts from the `nlstats2/` project root, not from inside `data/` or any subfolder.
 
 **Converting the schedule file.** Only game files in `data/` are converted. Do not move the schedule file into `data/`.
 
@@ -160,6 +166,10 @@ For each game the script:
 
 Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both processed. If a penalty has no GRADE OFFICIAL code the row is still included with blank position and grade fields so no penalty data is silently lost.
 
+The script reads each game file's raw `.xlsx` contents directly (via `zipfile` + `openpyxl`) and repairs two common real-world quirks automatically, with no need to touch the original files:
+- A missing or malformed `styles.xml` (some exports omit it, or include a stub `<fill></fill>` with no colour/pattern info that trips up strict Excel readers) is replaced with a minimal valid one before the file is parsed.
+- Rows with sparsely-filled trailing columns (e.g. an empty "notes" column near the end of the sheet) are padded out so every row lines up with the header row, instead of raising a column-count mismatch.
+
 ### Output columns
 
 | Column | Description |
@@ -172,7 +182,7 @@ Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both pro
 | qtr | Quarter |
 | foul_code | Penalty code (e.g. DOF-NZI, FST, OFH-TD) |
 | flag | Overall crew grade for this penalty (e.g. CC, MC, IC) |
-| position | Single letter position code (R, U, H, L, S, F, B, C) |
+| position | Single letter position code (R, U, D, L, S, F, B, C) -- legacy `H` is normalised to `D` |
 | official_initials | Initials of the official in that position |
 | official_name | Full name of the official |
 | grade_code | Single letter individual grade (C, M, I, N, G, W) |
@@ -200,7 +210,7 @@ Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both pro
 
 For each game, the script reads the schedule to find the complete list of assigned officials. Any official who was assigned but had no recorded calls is still shown in the officials table, greyed out with a circle marker and `--` in the accuracy column. This ensures the full crew is always visible even when some officials were not involved in any flagged play.
 
-The schedule is matched to flat file game IDs automatically. If the schedule has a `GameID` column that column is used directly. If not (older schedules), the game ID is constructed from `Dato + Maaned + Hjemme + Ude` to match the filename format.
+The schedule is matched to flat file game IDs automatically. If the schedule has a `GameID` column that column is used directly, and rows with a blank `GameID` cell (e.g. junk or formula/summary rows at the bottom of the sheet) are skipped. Only when the schedule has no `GameID` column at all (older schedules) is the game ID constructed from `Dato + Maaned + Hjemme + Ude` to match the filename format.
 
 ### Combined report sections
 
@@ -281,7 +291,7 @@ The schedule file must be an Excel file (`.xlsx`) placed in the `nlplan/` folder
 | `Ude` | Away team name |
 | `R` | Referee initials |
 | `U` | Umpire initials |
-| `D` | Deep Judge initials |
+| `D` | Down Judge initials (legacy schedules may use `H` for this column instead — both are accepted) |
 | `L` | Line Judge initials |
 | `S` | Side Judge initials |
 | `F` | Field Judge initials |
@@ -317,19 +327,24 @@ Plays with no penalty are left blank and are skipped automatically.
 
 ## GitHub — Pushing and Pulling
 
-The project is hosted at `https://github.com/qbnr7/nlstats2`. Use the workflow below whenever you update scripts or add new game files.
+The project is hosted at `https://github.com/qbnr7/nlstats2`, on the `main` branch. Use the workflow below whenever you update scripts or add new game files.
 
 ### First-time setup (already done)
 
-The repository is initialised and connected. You should not need to repeat these steps.
+The repository is initialised and connected. You should not need to repeat these steps. If you ever need to clone it fresh onto a new machine:
+
+```bash
+git clone https://github.com/qbnr7/nlstats2.git
+cd nlstats2
+```
 
 ### Pulling — getting the latest version from GitHub
 
 Run this before you start working to make sure your local copy is up to date:
 
 ```bash
-cd ~/nlstats
-git pull origin master
+cd ~/nlstats2
+git pull origin main
 ```
 
 If nothing has changed on GitHub since your last push it will say `Already up to date.`
@@ -339,18 +354,18 @@ If nothing has changed on GitHub since your last push it will say `Already up to
 After updating scripts or adding new game files, run these three commands:
 
 ```bash
-cd ~/nlstats
+cd ~/nlstats2
 git add .
 git commit -m "Short description of what changed"
-git push origin master
+git push origin main
 ```
 
 **Examples of good commit messages:**
 - `"Add September game files"`
 - `"Update 04_generate_reports with foul breakdown table"`
-- `"Rename Head Linesman to Deep Judge"`
+- `"Fix schedule loader picking up junk rows as games"`
 
-When prompted for a password, use your **Personal Access Token** (not your GitHub password).
+When prompted for a username and password, use your GitHub username and your **Personal Access Token** as the password (not your GitHub account password — see below for how to create one). If you don't want to re-enter it every time, see [Saving your token so you don't have to retype it](#saving-your-token-so-you-dont-have-to-retype-it).
 
 ### Checking what has changed
 
@@ -373,5 +388,42 @@ Instead of `git add .` (which stages everything), you can stage individual files
 ```bash
 git add 04_generate_reports.py README.md
 git commit -m "Update report script and docs"
-git push origin master
+git push origin main
 ```
+
+### Creating a Personal Access Token
+
+GitHub no longer accepts your account password for `git push` / `git pull` over HTTPS — you need a **Personal Access Token (PAT)** instead. A token acts like a password that's scoped just to this purpose and can be revoked at any time without changing your GitHub login.
+
+1. Sign in to GitHub, then go to **Settings** (click your profile picture, top right → *Settings*).
+2. Scroll down to **Developer settings** (bottom of the left-hand menu).
+3. Click **Personal access tokens** → **Tokens (classic)** — the classic flow is simplest for a single personal repo like this one. (GitHub also offers "Fine-grained tokens" with more granular per-repo permissions, if you prefer.)
+4. Click **Generate new token** → **Generate new token (classic)**.
+5. Give it a descriptive name, e.g. `nlstats2-laptop`.
+6. Set an **Expiration** (e.g. 90 days, or a custom date — GitHub recommends against "No expiration" for security, but it's your choice).
+7. Under **Select scopes**, tick **`repo`** (this covers push/pull access to your repositories). No other scopes are needed for this project.
+8. Click **Generate token** at the bottom.
+9. **Copy the token immediately** — it's shown only once. Store it somewhere safe (a password manager is ideal).
+
+You'll use this token as your password the next time Git asks for authentication (over HTTPS). If a token expires or is lost, just repeat the steps above to generate a new one.
+
+### Saving your token so you don't have to retype it
+
+By default, Git will ask for your username and token every time you push or pull. To avoid that:
+
+**macOS** — Git usually already uses the macOS Keychain automatically. If not:
+```bash
+git config --global credential.helper osxkeychain
+```
+
+**Windows** — Git for Windows installs "Git Credential Manager" by default, which handles this automatically. If not:
+```bash
+git config --global credential.helper manager
+```
+
+**Linux** — cache your credentials in memory for a while (default 15 minutes; the example below extends it to 8 hours):
+```bash
+git config --global credential.helper 'cache --timeout=28800'
+```
+
+After setting this, the next `git push`/`git pull` that asks for a password will remember your token for future commands.
