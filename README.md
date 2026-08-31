@@ -25,13 +25,13 @@ The FLAG column holds the overall crew grade — did the crew collectively handl
 
 ### Official Position Codes
 
-Grades are linked to officials using single-letter position codes — for example `BC` means the Back Judge received a Correct Call grade, and `BCHC` means both the Back Judge and Head Linesman received Correct Call grades.
+Grades are linked to officials using single-letter position codes — for example `BC` means the Back Judge received a Correct Call grade, and `BCDC` means both the Back Judge and Deep Judge received Correct Call grades.
 
 | Code | Position |
 |------|----------|
 | R | Referee |
 | U | Umpire |
-| H | Head Linesman |
+| D | Deep Judge |
 | L | Line Judge |
 | S | Side Judge |
 | F | Field Judge |
@@ -185,32 +185,54 @@ Plays with two separate penalties (PENALTY-CAT 1 and PENALTY CAT 2) are both pro
 
 ---
 
-## Script 04 — Generate Reports
+## Script 04 -- Generate Reports
 
-`04_generate_reports.py` reads `output/flat_calls.csv` and generates HTML reports.
+`04_generate_reports.py` reads `output/flat_calls.csv` and generates HTML reports. It also reads the schedule file from `nlplan/` to cross-reference the full assigned crew per game.
+
+**Dependencies:** `openpyxl` only. pandas is not used or required.
 
 **Output:**
-- `output/combined_report.html` — season overview for all audiences
-- `output/officials/{initials}.html` — one individual report per official
+- `output/combined_report.html` -- season overview for all audiences
+- `output/officials/{initials}.html` -- one individual report per official
+- `output/games/{game_id}.html` -- one shareable report per game
+
+### Full crew display
+
+For each game, the script reads the schedule to find the complete list of assigned officials. Any official who was assigned but had no recorded calls is still shown in the officials table, greyed out with a circle marker and `--` in the accuracy column. This ensures the full crew is always visible even when some officials were not involved in any flagged play.
+
+The schedule is matched to flat file game IDs automatically. If the schedule has a `GameID` column that column is used directly. If not (older schedules), the game ID is constructed from `Dato + Maaned + Hjemme + Ude` to match the filename format.
 
 ### Combined report sections
 
-- **Game Summary** — one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj — 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
-- **Game by Game Breakdown** — detailed section per game with officials table (sorted by position) and full penalty list
-- **Flag Breakdown** — counts of CC, MC, IC etc. across all games
-- **Penalty Analysis** — fouls grouped by category (PF, OFH, DPI, OPI, UC, DOF) with flag breakdown and subcode counts
-- **Officials List** — all officials alphabetically with games, positions, accuracy and grade breakdown
-- **Season Accuracy Ranking** — officials ranked by accuracy (minimum 3 games to qualify)
-- **Position Rankings** — best official at each position (minimum 2 games at that position to qualify)
+- **Game Summary** -- one row per game with penalty count, crew accuracy and flag breakdown. Games are displayed as `10 Maj -- 89ers vs Oaks` (day and month taken directly from the game ID, underscores replaced with spaces).
+- **Game by Game Breakdown** -- detailed section per game with officials table (sorted by position) and full penalty list. Assigned officials with no calls are shown greyed out.
+- **Flag Breakdown** -- counts of CC, MC, IC etc. across all games
+- **Foul Breakdown** -- interactive table with one row per foul type, showing crew flag percentages (CC%, IC% etc.) and individual accuracy. Filterable by category, foul name and minimum flag count.
+- **Penalty Analysis** -- fouls grouped by category (PF, OFH, DPI, OPI, UC, DOF) with flag breakdown and subcode counts
+- **Officials List** -- all officials alphabetically with games, positions, accuracy and grade breakdown
+- **Season Accuracy Ranking** -- officials ranked by accuracy (minimum 3 games to qualify)
+- **Position Rankings** -- best official at each position (minimum 2 games at that position to qualify)
 
-All tables are interactive — click any column header to sort, and use the filter box above each table to search.
+All tables are interactive -- click any column header to sort, and use the filter box above each table to search. A sticky navigation panel on the right edge lets you jump between sections without scrolling.
 
 ### Individual report sections
 
-- Summary cards (accuracy, games, graded calls, positions worked)
+- Summary cards: Overall Accuracy, Games Officiated, Flags Thrown (all calls including G and W), Graded Calls (C/M/N/I only), and Positions Worked (one line per position showing games and flags at that position)
 - Grade breakdown (C, M, I, N, G, W counts and percentages)
-- Performance by game (accuracy trend with visual bar; game shown as `10 Maj — 89ers vs Oaks`)
+- Performance by game (accuracy trend with visual bar; game shown as `10 Maj -- 89ers vs Oaks`)
 - Game by game breakdown with full call list sorted by position then play number
+
+### Per-game reports
+
+One standalone HTML file is generated per game into `output/games/`. Each file contains:
+
+- A crew accuracy banner at the top
+- **Officials table** -- all assigned crew sorted by position, with accuracy and grade breakdown per official. Officials who were assigned but had no recorded calls are shown greyed out with a circle marker.
+- **Penalties table** -- every flagged play in the game showing quarter, play number, foul, crew grade, official name, position and individual grade
+
+The files are self-contained and can be shared directly -- for example posted to a Discord channel for the crew. All CSS is inline and the file has no external dependencies. It links back to `combined_report.html` and to individual official reports when opened locally.
+
+The Game Summary table in the combined report has a `View` link for each game that opens the corresponding per-game file directly.
 
 ### Foul code display
 
@@ -237,9 +259,13 @@ Colour coding: green ≥ 90%, yellow ≥ 75%, orange ≥ 60%, red < 60%.
 
 ### Common mistakes
 
-**No individual reports generated.** If officials show as 0 it means no officials were matched from the schedule. Check that the schedule has officials assigned in the position columns (R, U, H, L, S, F, B, C) and that the game file names match the Game IDs.
+**No individual reports generated.** If officials show as 0 it means no officials were matched from the schedule. Check that the schedule has officials assigned in the position columns (R, U, D, L, S, F, B, C) and that the game file names match the Game IDs.
 
-**Links between combined report and individual reports are broken.** The combined report links to `officials/{initials}.html` using relative paths. Both files must remain in their generated locations — do not move the combined report out of `output/` or the individual reports out of `output/officials/`.
+**An official is in the schedule but not shown in the game.** Make sure the game file name matches the `GameID` in the schedule exactly. Run `01_check_files.py` to diagnose mismatches.
+
+**An official appears greyed out with a circle marker.** This is expected -- it means they were assigned in the schedule but had no calls recorded in the game file. It is not an error.
+
+**Links between combined report and individual reports are broken.** The combined report links to `officials/{initials}.html` using relative paths. Both files must remain in their generated locations -- do not move the combined report out of `output/` or the individual reports out of `output/officials/`.
 
 ---
 ## Schedule File Format
@@ -255,7 +281,7 @@ The schedule file must be an Excel file (`.xlsx`) placed in the `nlplan/` folder
 | `Ude` | Away team name |
 | `R` | Referee initials |
 | `U` | Umpire initials |
-| `H` | Head Linesman initials |
+| `D` | Deep Judge initials |
 | `L` | Line Judge initials |
 | `S` | Side Judge initials |
 | `F` | Field Judge initials |
@@ -286,3 +312,66 @@ The file must have a single sheet with the following columns:
 | `GRADE OFFICIAL 2` | Individual grades for second penalty |
 
 Plays with no penalty are left blank and are skipped automatically.
+
+---
+
+## GitHub — Pushing and Pulling
+
+The project is hosted at `https://github.com/qbnr7/nlstats2`. Use the workflow below whenever you update scripts or add new game files.
+
+### First-time setup (already done)
+
+The repository is initialised and connected. You should not need to repeat these steps.
+
+### Pulling — getting the latest version from GitHub
+
+Run this before you start working to make sure your local copy is up to date:
+
+```bash
+cd ~/nlstats
+git pull origin master
+```
+
+If nothing has changed on GitHub since your last push it will say `Already up to date.`
+
+### Pushing — sending your changes to GitHub
+
+After updating scripts or adding new game files, run these three commands:
+
+```bash
+cd ~/nlstats
+git add .
+git commit -m "Short description of what changed"
+git push origin master
+```
+
+**Examples of good commit messages:**
+- `"Add September game files"`
+- `"Update 04_generate_reports with foul breakdown table"`
+- `"Rename Head Linesman to Deep Judge"`
+
+When prompted for a password, use your **Personal Access Token** (not your GitHub password).
+
+### Checking what has changed
+
+To see which files have been modified or added before committing:
+
+```bash
+git status
+```
+
+To see a summary of recent commits:
+
+```bash
+git log --oneline -10
+```
+
+### If you only want to push specific files
+
+Instead of `git add .` (which stages everything), you can stage individual files:
+
+```bash
+git add 04_generate_reports.py README.md
+git commit -m "Update report script and docs"
+git push origin master
+```
