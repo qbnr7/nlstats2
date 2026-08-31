@@ -839,13 +839,18 @@ def build_official_report(initials, data, games, crew_by_game=None):
     html += '<div id="summary">'
     n_flags_total = len(all_grades)
     n_graded      = sum(1 for g in all_grades if g in GRADE_SCORES)
-    # Build positions card: one line per position -- name, games, flags
+    # Build positions card: one line per position -- name, games, flags.
+    # Iterate pos_games (every position they were ever scheduled or
+    # flagged at), not positions_worked (flags only) -- otherwise a
+    # position with real assigned games but zero flags thrown there
+    # would be missing from this card entirely, even though the
+    # official clearly worked it.
     pos_lines = ''.join(
         f'<div style="margin:3px 0">'
         f'<strong>{POSITION_NAMES.get(p, p)}</strong>'
         f', Games {len(pos_games[p])}'
-        f', Flags {n}</div>'
-        for p, n in sorted(positions_worked.items(), key=lambda x: pos_sort_key(x[0]))
+        f', Flags {positions_worked.get(p, 0)}</div>'
+        for p in sorted(pos_games, key=pos_sort_key)
     ) or '<div>N/A</div>'
     html += '<div class="summary-grid">'
     html += (f'<div class="summary-card"><div class="value" style="color:{colour}">'
@@ -1496,11 +1501,20 @@ def build_combined_report(games, officials, crew_by_game=None):
             for calls in data['calls_by_game'].values()
             for c in calls if c['grade']
         ]
-        positions = sorted(set(
+        positions = set(
             c['position']
             for calls in data['calls_by_game'].values()
             for c in calls if c['position']
-        ), key=pos_sort_key)
+        )
+        # Also include positions from games where they were scheduled
+        # but threw zero flags -- otherwise a position worked with a
+        # clean record would be silently missing from this list.
+        for gid, calls in data['calls_by_game'].items():
+            if not calls:
+                sp = scheduled_position(crew_by_game, gid, initials)
+                if sp:
+                    positions.add(sp)
+        positions = sorted(positions, key=pos_sort_key)
         pos_str = ', '.join(POSITION_NAMES.get(p, p) for p in positions)
         acc     = calc_accuracy(all_grades)
         acc_str = f"{acc}%" if acc is not None else "N/A"
