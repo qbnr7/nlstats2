@@ -61,6 +61,7 @@ def game_sort_key(game_id):
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 INPUT_FILE      = Path("output/flat_calls.csv")
+DATA_FOLDER     = Path("data")
 OUTPUT_FOLDER   = Path("output")
 OFFICIALS_DIR   = OUTPUT_FOLDER / "officials"
 SCHEDULE_FOLDER = Path("nlplan")
@@ -437,20 +438,50 @@ def load_official_names():
     return names
 
 
-def merge_schedule_into_data(games, officials, crew_by_game, official_names):
+def played_game_ids():
+    """
+    Return the set of game IDs that have an actual .xlsx/.xls game file
+    in data/ -- the same files 03_build_flat_file.py reads for penalty
+    data -- i.e. games that have actually been played, as opposed to
+    games that are merely scheduled ahead of time in nlplan/ but
+    haven't happened yet. Mid-season, the schedule often lists games
+    for future weeks before they're played; those should not count
+    toward anyone's games-officiated total until a game file for them
+    actually shows up in data/.
+
+    Deliberately does not check for a .csv here: 02_convert_to_csv.py's
+    .csv output is an optional inspection copy that 03_build_flat_file.py
+    never reads, so a stray .csv with no matching .xlsx would mark a
+    game as "played" without ever actually contributing real penalty
+    data for it.
+    """
+    return ({f.stem for f in DATA_FOLDER.glob('*.xlsx')} |
+            {f.stem for f in DATA_FOLDER.glob('*.xls')})
+
+
+def merge_schedule_into_data(games, officials, crew_by_game, official_names,
+                              played_ids):
     """
     Make every official's 'games' set reflect every game they were
-    actually scheduled for -- not just games where flat_calls.csv happens
-    to have a row for their position. Without this, three things
-    silently vanish from every report:
+    actually scheduled for AND that has actually been played -- not
+    just games where flat_calls.csv happens to have a row for their
+    position. Without this, three things silently vanish from every
+    report:
 
       1. A game where an official's position had zero flagged penalties
          (no row is ever written for a clean assignment).
-      2. A game with zero penalties recorded at all (that game never
-         appears in flat_calls.csv, so it never enters `games` either).
+      2. A played game with zero penalties recorded at all (that game
+         never appears in flat_calls.csv, so it never enters `games`
+         either).
       3. An official who had zero graded calls the entire season (they
          never appear in flat_calls.csv at all, so they'd be completely
          absent from the Officials List / rankings).
+
+    A game that's only scheduled (in nlplan/) but has no game file in
+    data/ yet -- i.e. hasn't been played -- is deliberately NOT added
+    here, so running the pipeline mid-season (with future weeks already
+    in the schedule) doesn't inflate anyone's games-officiated count
+    with games that haven't happened.
 
     This is called once, right after load_data() and load_schedule(),
     before any report is built.
@@ -466,10 +497,15 @@ def merge_schedule_into_data(games, officials, crew_by_game, official_names):
     for norm_game_id, positions in crew_by_game.items():
         actual_game_id = norm_to_actual.get(norm_game_id, norm_game_id)
 
-        # Game had zero penalties recorded at all -> it never made it
-        # into flat_calls.csv. Create an empty entry so it still shows
-        # up (0 penalties / N/A accuracy) instead of vanishing entirely.
         if actual_game_id not in games:
+            # Game had zero penalties recorded at all, or hasn't been
+            # played yet -- either way it never made it into
+            # flat_calls.csv. Only backfill it if a game file actually
+            # exists for it (it was played but genuinely clean);
+            # otherwise it's a future scheduled game and should not
+            # count for anyone yet.
+            if norm_game_id not in played_ids:
+                continue
             games[actual_game_id] = {
                 'date': '', 'home_team': '', 'away_team': '', 'rows': [],
             }
@@ -1632,7 +1668,9 @@ def main():
     games, officials = load_data()
     crew_by_game     = load_schedule()
     official_names   = load_official_names()
-    merge_schedule_into_data(games, officials, crew_by_game, official_names)
+    played_ids       = played_game_ids()
+    merge_schedule_into_data(games, officials, crew_by_game, official_names,
+                              played_ids)
     print(f"  Games loaded    : {len(games)}")
     print(f"  Officials found : {len(officials)}")
 
