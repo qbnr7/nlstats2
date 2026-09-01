@@ -177,7 +177,7 @@ def parse_grade_official(code, context=''):
     e.g. 'RC' -> [('R','C')], 'LCDC' -> [('L','C'),('D','C')]
          'LCHC' -> [('L','C'),('D','C')]   (H normalised to D)
     """
-    if code is None or str(code).strip() == '':
+    if pd.isna(code) or str(code).strip() == '':
         return []
 
     code = str(code).strip().upper()
@@ -266,6 +266,26 @@ def load_schedule(schedule_file):
 
 # ── Game file processor ────────────────────────────────────────────────────────
 
+def clean_numeric(val):
+    """
+    Format a PLAY # / QTR value cleanly.
+
+    A genuinely empty cell comes back from pandas as NaN, not None, once
+    it shares a column with real values -- str(NaN) is the literal text
+    'nan', not ''. And a numeric column that has any missing cells gets
+    promoted to float64 by pandas (it has no integer "missing" value),
+    so a whole-number play/quarter can come through as e.g. 1.0 instead
+    of 1. This returns '' for missing values and strips a spurious .0
+    from whole numbers, instead of passing either artifact straight
+    into the output.
+    """
+    if pd.isna(val):
+        return ''
+    if isinstance(val, float) and val.is_integer():
+        return str(int(val))
+    return str(val).strip()
+
+
 def process_game_file(file_path, game_id, game_info, officials):
     """
     Process a single game Excel file.
@@ -275,19 +295,19 @@ def process_game_file(file_path, game_id, game_info, officials):
     rows = []
 
     for _, play in df.iterrows():
-        play_number = play.get('PLAY #', '')
-        qtr         = play.get('QTR',    '')
+        play_number = clean_numeric(play.get('PLAY #', ''))
+        qtr         = clean_numeric(play.get('QTR',    ''))
 
         for penalty_col, flag_col, grade_col in PENALTY_COLUMNS:
             foul_code      = play.get(penalty_col, '')
             flag           = play.get(flag_col,    '')
             grade_official = play.get(grade_col,   '')
 
-            if foul_code is None or str(foul_code).strip() == '':
+            if pd.isna(foul_code) or str(foul_code).strip() == '':
                 continue
 
             foul_code = str(foul_code).strip()
-            flag      = str(flag).strip() if flag is not None else ''
+            flag      = '' if pd.isna(flag) else str(flag).strip()
             pairs     = parse_grade_official(
                 grade_official,
                 context=f"game '{game_id}', play {play_number}")
