@@ -249,6 +249,8 @@ def load_schedule(schedule_file):
 
         dato  = str(row.get('Dato',  '') or '').strip()
         maned = str(row.get('Måned', '') or '').strip()
+        dato  = '' if dato.lower()  == 'nan' else dato
+        maned = '' if maned.lower() == 'nan' else maned
         date  = f"{dato}-{maned}" if dato and maned else ''
 
         positions = {}
@@ -271,10 +273,12 @@ def load_schedule(schedule_file):
                     pos, context=f"in schedule column '{pos}' for game '{game_id}'")
                 positions[norm_pos] = val
 
+        home_team = str(row.get('Hjemme', '') or '').strip()
+        away_team = str(row.get('Ude',    '') or '').strip()
         schedule[game_id] = {
             'date':      date,
-            'home_team': str(row.get('Hjemme', '') or '').strip(),
-            'away_team': str(row.get('Ude',    '') or '').strip(),
+            'home_team': '' if home_team.lower() == 'nan' else home_team,
+            'away_team': '' if away_team.lower() == 'nan' else away_team,
             'positions': positions,
         }
 
