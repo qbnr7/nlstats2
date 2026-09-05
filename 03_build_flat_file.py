@@ -208,9 +208,16 @@ def load_officials(schedule_file):
     """
     df = load_xlsx(schedule_file, sheet_name=OFFICIALS_SHEET)
 
-    # Row 0 is a merged title row, row 1 contains the actual column headers
-    df.columns = [str(c).strip() for c in df.iloc[1]]
-    df = df[2:].reset_index(drop=True)
+    # In the raw sheet, row 1 is a merged title row and row 2 has the
+    # real column headers ("Initialer", "Navn", ...), with official data
+    # starting at row 3. But load_xlsx() already consumes the sheet's
+    # first row (the blank title row) as the DataFrame's own column
+    # headers, so by the time it gets here df.iloc[0] is already the
+    # real header row -- not df.iloc[1]. Using iloc[1]/df[2:] here (as
+    # if df still had the raw, unshifted rows) skips the true header row
+    # and turns the first official's own data into bogus column names.
+    df.columns = [str(c).strip() for c in df.iloc[0]]
+    df = df[1:].reset_index(drop=True)
 
     officials = {}
     for _, row in df.iterrows():
@@ -248,11 +255,21 @@ def load_schedule(schedule_file):
         for pos in POSITION_READ_ORDER:
             val = str(row.get(pos, '') or '').strip()
             if val and val.lower() != 'nan':
+                val = val.split('+')[0].strip()
+                # Strip parens only if the whole value is a backup
+                # marker: (BT) -> BT, but keep nationality suffixes
+                # like FK(DE) as-is. Must match 04_generate_reports.py's
+                # load_schedule() exactly -- otherwise the same official
+                # ends up keyed as both "(BT)" and "BT" across the two
+                # scripts, splitting one person's calls and games
+                # between two separate, unmatched identities.
+                if val.startswith('(') and val.endswith(')'):
+                    val = val[1:-1].strip()
                 # H is read before D, so a D column (if present)
                 # overwrites it -- D is dominant.
                 norm_pos = normalise_position(
                     pos, context=f"in schedule column '{pos}' for game '{game_id}'")
-                positions[norm_pos] = val.split('+')[0].strip()
+                positions[norm_pos] = val
 
         schedule[game_id] = {
             'date':      date,

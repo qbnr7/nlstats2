@@ -492,10 +492,14 @@ def main():
         return
     print(f"  Loaded {len(schedule)} scheduled games")
 
-    # Find available game files (by stem name)
-    xlsx_files = set(f.stem for f in DATA_FOLDER.glob("*.xlsx"))
-    csv_files  = set(f.stem for f in DATA_FOLDER.glob("*.csv"))
-    available  = xlsx_files | csv_files
+    # Find available game files (by stem name). Only .xlsx/.xls count --
+    # those are the only files 03_build_flat_file.py actually reads for
+    # penalty data, so a "Found" status here should mean the game will
+    # really be processed. A stray .csv with no matching .xlsx (e.g. the
+    # original was deleted after conversion) is not enough on its own:
+    # it would report as found while contributing zero real data.
+    available = set(f.stem for f in DATA_FOLDER.glob("*.xlsx")) | \
+                set(f.stem for f in DATA_FOLDER.glob("*.xls"))
     print(f"  Found {len(available)} file(s) in data/")
 
     # Build and write report

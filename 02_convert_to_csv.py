@@ -4,10 +4,9 @@
 ====================
 Converts game Excel files to CSV format.
 
-This is a one-time conversion step needed because the game Excel files
-have a formatting issue that prevents standard Excel readers from opening
-them. Converting to CSV removes all formatting and produces clean data
-files that work reliably on any system.
+This is a convenience step for troubleshooting -- it gives you a clean,
+formatting-free CSV copy of each game file that's easy to open and eyeball
+in a text editor or spreadsheet app.
 
 The schedule file (in nlplan/) does NOT need converting as it reads fine.
 
@@ -22,8 +21,10 @@ Output:
 Usage:
     python 02_convert_to_csv.py
 
-After running this script, the Excel files can be kept or deleted.
-Script 03_build_flat_file.py will read the CSV files.
+03_build_flat_file.py reads the original .xlsx files directly -- it never
+reads the .csv files this script produces, so KEEP the Excel files. A
+game whose .xlsx is deleted after conversion will not be processed at
+all, even though its .csv copy is still sitting in data/.
 """
 
 import csv
